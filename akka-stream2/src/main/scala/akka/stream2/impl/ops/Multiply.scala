@@ -10,8 +10,9 @@ class Multiply(factor: Int)(implicit val upstream: Upstream, val downstream: Dow
   require(factor > 0)
 
   var requested = 0
+  val startBehavior = behavior
 
-  val initialBehavior: Behavior =
+  def initialBehavior: Behavior =
     new Behavior {
       override def requestMore(elements: Int): Unit = {
         requested = elements
@@ -33,7 +34,7 @@ class Multiply(factor: Int)(implicit val upstream: Upstream, val downstream: Dow
               produce(remaining - 1)
             } else upstream.requestMore(1)
           } else if (remaining > 0) become(new WaitingForRequestMore(element, remaining))
-          else become(initialBehavior)
+          else become(startBehavior)
       }
     }
 

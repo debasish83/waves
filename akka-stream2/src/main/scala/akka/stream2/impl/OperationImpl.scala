@@ -47,16 +47,16 @@ object OperationImpl {
   abstract class Stateful extends OperationImpl { outer ⇒
     def upstream: Upstream
     def downstream: Downstream
-    def initialBehavior: OperationImpl
-    var behavior: OperationImpl = _ // we can't directly init to a `val initialBehavior` due to initialization order
+    def initialBehavior: OperationImpl // cannot be implemented with a val due to initialization order!
+    var behavior: OperationImpl = initialBehavior
     def become(next: OperationImpl): Unit = behavior = next
+    def become(next: Terminated.type): Unit = behavior = next.asInstanceOf[OperationImpl]
 
-    def onNext(element: Any) = { initBehavior(); behavior.onNext(element) }
-    def onComplete() = { initBehavior(); behavior.onComplete() }
-    def onError(cause: Throwable) = { initBehavior(); behavior.onError(cause) }
-    def requestMore(elements: Int) = { initBehavior(); behavior.requestMore(elements) }
-    def cancel() = { initBehavior(); behavior.cancel() }
-    private def initBehavior() = if (behavior eq null) become(initialBehavior)
+    def onNext(element: Any) = behavior.onNext(element)
+    def onComplete() = behavior.onComplete()
+    def onError(cause: Throwable) = behavior.onError(cause)
+    def requestMore(elements: Int) = behavior.requestMore(elements)
+    def cancel() = behavior.cancel()
 
     // helper classes for easier stateful behavior definition
     class Behavior extends Abstract {

@@ -30,13 +30,14 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
   class WaitingForRequestMore(firstElementOfNextSubstream: Any) extends BehaviorWithSubUpstreamHandling {
     override def requestMore(elements: Int): Unit = {
       mainRequested = elements
-      initialBehavior.onNextFirst(firstElementOfNextSubstream)
+      startBehavior.onNextFirst(firstElementOfNextSubstream)
     }
     override def onComplete(): Unit = upstreamCompleted = true
     override def onError(cause: Throwable): Unit = upstreamError = Some(cause)
   }
 
-  val initialBehavior: BehaviorWithOnNext =
+  val startBehavior = behavior.asInstanceOf[BehaviorWithOnNext]
+  def initialBehavior: BehaviorWithOnNext =
     new BehaviorWithOnNext {
       override def requestMore(elements: Int): Unit = {
         mainRequested += elements
@@ -83,7 +84,7 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
         // in this case we follow the principle of not dropping elements if possible, so
         // we treat the element as the first one of the next sub-stream
         if (mainRequested > 0) {
-          become(initialBehavior)
+          become(startBehavior)
           upstream.requestMore(1)
         } else become(new WaitingForRequestMore(firstElement))
       }
@@ -117,7 +118,7 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
       if (downstreamCancelled) {
         become(Terminated)
         upstream.cancel()
-      } else if (mainRequested > 0) initialBehavior.onNextFirst(element)
+      } else if (mainRequested > 0) startBehavior.onNextFirst(element)
       else become(new WaitingForRequestMore(element))
     }
     override def onComplete(): Unit = {
@@ -141,7 +142,7 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
         become(Terminated)
         upstream.cancel()
       } else {
-        become(initialBehavior)
+        become(startBehavior)
         if (mainRequested > 0) upstream.requestMore(1)
       }
   }

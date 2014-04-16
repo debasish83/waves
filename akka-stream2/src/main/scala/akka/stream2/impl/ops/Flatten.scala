@@ -10,8 +10,9 @@ class Flatten(implicit val upstream: Upstream, val downstream: Downstream, ctx: 
 
   var requested = 0
   var upstreamCompleted = false
+  val startBehavior = behavior
 
-  val initialBehavior: BehaviorWithSubDownstreamHandling =
+  def initialBehavior: BehaviorWithSubDownstreamHandling =
     new BehaviorWithSubDownstreamHandling {
       override def requestMore(elements: Int): Unit = {
         requested += elements
@@ -90,7 +91,7 @@ class Flatten(implicit val upstream: Upstream, val downstream: Downstream, ctx: 
       become(Terminated)
       downstream.onError(error.get)
     } else {
-      become(initialBehavior)
+      become(startBehavior)
       if (requested > 0) upstream.requestMore(1)
     }
   }
