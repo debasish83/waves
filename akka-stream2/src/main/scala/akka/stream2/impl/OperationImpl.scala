@@ -97,7 +97,7 @@ object OperationImpl {
   def apply(op: OperationX)(implicit upstream: Upstream, downstream: Downstream,
                             ctx: OperationProcessor.Context): OperationImpl =
     op.asInstanceOf[Operation[Any, Any]] match {
-      case Concat(source)         ⇒ new ops.Concat(source)
+      case Concat(flow)           ⇒ new ops.Concat(flow)
       case Buffer(seed, f, g, h)  ⇒ new ops.Buffer(seed, f, g, h)
       case Drop(n)                ⇒ new ops.Drop(n)
       case Filter(f)              ⇒ new ops.Filter(f)

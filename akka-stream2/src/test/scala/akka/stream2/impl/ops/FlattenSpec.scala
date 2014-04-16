@@ -20,9 +20,9 @@ class FlattenSpec extends OperationImplSpec {
         import test._
         requestMore(1)
         expectRequestMore(1)
-        val sourceA = mockSource
-        onNext(sourceA)
-        expectRequestSubUpstream(sourceA)
+        val flowA = mockFlow
+        onNext(flowA)
+        expectRequestSubUpstream(flowA)
       }
 
       "gather up requestMore calls from downstream" in new Test(op) {
@@ -120,9 +120,9 @@ class FlattenSpec extends OperationImplSpec {
         import test._
         requestMore(1)
         expectRequestMore(1)
-        val sourceA = mockSource
-        onNext(sourceA)
-        val subUpstream = expectRequestSubUpstream(sourceA)
+        val flowA = mockFlow
+        onNext(flowA)
+        val subUpstream = expectRequestSubUpstream(flowA)
         subUpstream.onSubscribe()
         subUpstream.expectRequestMore(1)
         subUpstream
@@ -151,9 +151,9 @@ class FlattenSpec extends OperationImplSpec {
         subUpstream.expectRequestMore(5)
         subUpstream.onComplete()
         expectRequestMore(1)
-        val sourceB = mockSource
-        onNext(sourceB)
-        val subUpstream2 = expectRequestSubUpstream(sourceB)
+        val flowB = mockFlow
+        onNext(flowB)
+        val subUpstream2 = expectRequestSubUpstream(flowB)
         subUpstream2.onSubscribe()
         subUpstream2.expectRequestMore(5)
       }

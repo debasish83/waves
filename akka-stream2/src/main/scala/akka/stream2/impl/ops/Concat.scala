@@ -3,9 +3,9 @@ package ops
 
 import akka.stream2.impl.OperationImpl.Terminated
 import OperationProcessor.SubDownstreamHandling
-import akka.stream2.Source
+import akka.stream2.Flow
 
-class Concat(source: Source[Any])(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
+class Concat(flow: Flow[Any])(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
   extends OperationImpl.Stateful {
 
   def initialBehavior: Behavior =
@@ -20,12 +20,12 @@ class Concat(source: Source[Any])(implicit val upstream: Upstream, val downstrea
         downstream.onNext(element)
       }
       override def onComplete(): Unit = {
-        become(new WaitingForSecondSourceSubscription(requested))
-        ctx.requestSubUpstream(source, behavior.asInstanceOf[SubDownstreamHandling])
+        become(new WaitingForSecondFlowSubscription(requested))
+        ctx.requestSubUpstream(flow, behavior.asInstanceOf[SubDownstreamHandling])
       }
     }
 
-  class WaitingForSecondSourceSubscription(var requested: Int) extends BehaviorWithSubDownstreamHandling {
+  class WaitingForSecondFlowSubscription(var requested: Int) extends BehaviorWithSubDownstreamHandling {
     var cancelled = false
     override def requestMore(elements: Int): Unit = requested += elements
     override def cancel(): Unit = cancelled = true

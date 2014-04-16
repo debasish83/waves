@@ -35,16 +35,16 @@ object Operation {
     def ~>[C](next: B ==> C): Res[C] = op ~> next
   }
 
-  implicit class Api2[A, B](val op: A ==> Source[B]) extends OperationApi2[B] {
+  implicit class Api2[A, B](val op: A ==> Flow[B]) extends OperationApi2[B] {
     type Res[C] = A ==> C
-    def ~>[C](next: Source[B] ==> C): Res[C] = Operation.~>(op, next)
+    def ~>[C](next: Flow[B] ==> C): Res[C] = Operation.~>(op, next)
   }
 
   /////////////////////////// MODEL ////////////////////////////
 
   final case class ~>[A, B, C](f: A ==> B, g: B ==> C) extends (A ==> C)
 
-  final case class Concat[T](source: Source[T]) extends (T ==> T)
+  final case class Concat[T](flow: Flow[T]) extends (T ==> T)
 
   final case class Buffer[A, B, S](seed: S,
                                    compress: (S, A) ⇒ S,
@@ -55,11 +55,11 @@ object Operation {
 
   final case class Filter[T](p: T ⇒ Boolean) extends (T ==> T)
 
-  final case class Flatten[T]() extends (Source[T] ==> T)
+  final case class Flatten[T]() extends (Flow[T] ==> T)
 
   final case class Fold[A, B](seed: B, f: (B, A) ⇒ B) extends (A ==> B)
 
-  final case class Split[T](f: T ⇒ Split.Command) extends (T ==> Source[T])
+  final case class Split[T](f: T ⇒ Split.Command) extends (T ==> Flow[T])
   object Split {
     sealed trait Command
     case object Drop extends Command // drop the current element
@@ -68,7 +68,7 @@ object Operation {
     case object First extends Command // complete the current sub-stream (if there is one) and start a new one with the current element
   }
 
-  final case class HeadAndTail[T]() extends (Source[T] ==> (T, Source[T]))
+  final case class HeadAndTail[T]() extends (Flow[T] ==> (T, Flow[T]))
 
   sealed abstract class Identity[A] extends (A ==> A)
   object Identity extends Identity[Nothing] {
@@ -80,7 +80,7 @@ object Operation {
 
   final case class Map[A, B](f: A ⇒ B) extends (A ==> B)
 
-  final case class Merge[T](source: Source[T]) extends (T ==> T)
+  final case class Merge[T](flow: Flow[T]) extends (T ==> T)
 
   final case class Multiply[T](factor: Int) extends (T ==> T)
 
@@ -95,5 +95,5 @@ object Operation {
 
   final case class Take[T](n: Int) extends (T ==> T)
 
-  final case class Zip[A, B, C](source: Source[C]) extends (A ==> (B, C))
+  final case class Zip[A, B, C](flow: Flow[C]) extends (A ==> (B, C))
 }

@@ -3,7 +3,7 @@ package ops
 
 import akka.stream2.Operation.Split._
 import akka.stream2.impl.OperationProcessor.SubUpstreamHandling
-import akka.stream2.Source
+import akka.stream2.Flow
 import akka.stream2.impl.OperationImpl.Terminated
 
 class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream: Downstream,
@@ -50,7 +50,7 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
         val substream = ctx.requestSubDownstream(behavior.asInstanceOf[SubUpstreamHandling])
         become(new WaitingForSubstreamRequestMore(substream, firstElement, completeAfterFirstElement))
         mainRequested -= 1
-        downstream.onNext(Source(substream))
+        downstream.onNext(Flow(substream))
         if (upstreamCompleted) downstream.onComplete()
         else if (upstreamError.isDefined) downstream.onError(upstreamError.get)
       }
