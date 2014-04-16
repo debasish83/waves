@@ -5,7 +5,7 @@ import akka.stream2.impl.OperationImpl.Terminated
 import OperationProcessor.SubDownstreamHandling
 import akka.stream2.Source
 
-class Append(source: Source[Any])(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
+class Concat(source: Source[Any])(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
   extends OperationImpl.Stateful {
 
   def initialBehavior: Behavior =

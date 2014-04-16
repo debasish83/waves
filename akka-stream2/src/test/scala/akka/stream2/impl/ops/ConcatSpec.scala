@@ -2,12 +2,12 @@ package akka.stream2.impl.ops
 
 import akka.stream2.Operation
 
-class AppendSpec extends OperationImplSpec {
+class ConcatSpec extends OperationImplSpec {
 
   val source2 = mockSource[Char]
-  val op = Operation.Append[Char](source2)
+  val op = Operation.Concat[Char](source2)
 
-  "`Append` should" - {
+  "`Concat` should" - {
 
     "before completion of first upstream" - {
 

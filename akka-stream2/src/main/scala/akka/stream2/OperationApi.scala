@@ -11,8 +11,8 @@ trait OperationApi1[A] extends Any {
   def ~>[B](next: A ==> B): Res[B]
 
   // appends the given source to the end of this stream
-  def append(source: Source[A]): Res[A] =
-    this ~> Append(source)
+  def concat(source: Source[A]): Res[A] =
+    this ~> Concat(source)
 
   // adds (bounded or unbounded) pressure elasticity
   // consumes at max rate as long as `canConsume` is true,

@@ -34,7 +34,7 @@ class ExamplesSpec(override val system: ActorSystem) extends TestEnvironment(Tim
     }
 
     "append" in {
-      source(1 to 10).append(source(11 to 20)) should produce(1 to 20)
+      source(1 to 10).concat(source(11 to 20)) should produce(1 to 20)
     }
 
     "flatten" in {

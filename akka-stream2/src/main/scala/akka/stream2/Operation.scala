@@ -44,7 +44,7 @@ object Operation {
 
   final case class ~>[A, B, C](f: A ==> B, g: B ==> C) extends (A ==> C)
 
-  final case class Append[T](source: Source[T]) extends (T ==> T)
+  final case class Concat[T](source: Source[T]) extends (T ==> T)
 
   final case class Buffer[A, B, S](seed: S,
                                    compress: (S, A) ⇒ S,
