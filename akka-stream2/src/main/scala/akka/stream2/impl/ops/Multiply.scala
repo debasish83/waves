@@ -40,7 +40,6 @@ class Multiply(factor: Int)(implicit val upstream: Upstream, val downstream: Dow
   // when we enter this state `requested` is zero
   class WaitingForRequestMore(element: Any, var remaining: Int) extends Behavior {
     var upstreamCompleted = false
-    var error: Option[Throwable] = None
     override def requestMore(elements: Int) = {
       requested += elements
       if (requested == elements) produce()
@@ -55,15 +54,11 @@ class Multiply(factor: Int)(implicit val upstream: Upstream, val downstream: Dow
         } else if (upstreamCompleted) {
           become(Terminated)
           downstream.onComplete()
-        } else if (error.isDefined) {
-          become(Terminated)
-          downstream.onError(error.get)
         } else {
           become(waitingForNextElement)
           upstream.requestMore(1)
         }
     }
     override def onComplete() = upstreamCompleted = true
-    override def onError(cause: Throwable): Unit = error = Some(cause)
   }
 }

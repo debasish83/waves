@@ -67,16 +67,12 @@ trait MultiplyTests { this: OperationImplSpec ⇒
       expectComplete()
     }
 
-    "continue to produce until the end of the current series upon upstream error" in new Test(op) {
+    "immediately propagate upstream error" in new Test(op) {
       requestMore(3)
       expectRequestMore(1)
       onNext('A')
       expectNext('A', 'A', 'A')
       onError(TestException)
-      requestMore(1)
-      expectNext('A')
-      requestMore(3)
-      expectNext('A')
       expectError(TestException)
     }
 
@@ -88,11 +84,6 @@ trait MultiplyTests { this: OperationImplSpec ⇒
     "propagate an empty stream" in new Test(op) {
       onComplete()
       expectComplete()
-    }
-
-    "propagate error" in new Test(op) {
-      onError(TestException)
-      expectError(TestException)
     }
   }
 }
