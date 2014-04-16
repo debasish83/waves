@@ -1,7 +1,9 @@
 package akka.stream2
 
 import scala.language.implicitConversions
-import scala.concurrent.ExecutionContext
+import org.reactivestreams.api.{ Consumer, Processor }
+import akka.actor.ActorRefFactory
+import akka.stream2.impl.OperationProcessor
 
 sealed trait OperationX // untyped base trait used for dealing with untyped operations
 
@@ -14,6 +16,15 @@ sealed abstract class Operation[-A, +B] extends OperationX {
       case (_, _: Identity[_]) ⇒ this.asInstanceOf[A ==> C]
       case _                   ⇒ Operation.~>(this, other)
     }
+
+  def toProcessor[AA <: A, BB >: B](implicit refFactory: ActorRefFactory): Processor[AA, BB] =
+    new OperationProcessor(this).asInstanceOf[Processor[AA, BB]] // TODO: introduce implicit settings allowing for buffer size config
+
+  def produceTo[AA <: A, BB >: B](consumer: Consumer[BB])(implicit refFactory: ActorRefFactory): Consumer[AA] = {
+    val processor = toProcessor[A, BB]
+    processor.produceTo(consumer)
+    processor.asInstanceOf[Consumer[AA]]
+  }
 }
 
 object Operation {
@@ -21,11 +32,6 @@ object Operation {
   implicit class Api1[A, B](val op: A ==> B) extends OperationApi1[B] {
     type Res[C] = A ==> C
     def ~>[C](next: B ==> C): Res[C] = op ~> next
-    def ~>(sink: Sink[B]): Sink[A] = sink match {
-      case Sink.Mapped(op2, consumer) ⇒ Sink.Mapped(op ~> op2, consumer)
-      case Sink.Unmapped(consumer)    ⇒ Sink.Mapped(op, consumer)
-    }
-    def foreach(f: B ⇒ Unit)(implicit executor: ExecutionContext): Sink[A] = Sink.Mapped(op, Sink(f).consumer)
   }
 
   implicit class Api2[A, B](val op: A ==> Source[B]) extends OperationApi2[B] {
@@ -87,8 +93,6 @@ object Operation {
     final case class Continue[T, S](nextState: S) extends Command[T, S]
     case object Stop extends Command[Nothing, Nothing]
   }
-
-  final case class Tee[T](sink: Sink[T]) extends (T ==> T)
 
   final case class Take[T](n: Int) extends (T ==> T)
 

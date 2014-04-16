@@ -120,10 +120,6 @@ trait OperationApi1[A] extends Any {
   // never produces empty sub-streams
   def split(f: A ⇒ Split.Command): Res[Source[A]] = this ~> Split(f)
 
-  // taps into the upstream and forwards all incoming values also into the given sink
-  // consumes no faster than the minimum rate of the downstream and the given sink
-  def tee(sink: Sink[A]): Res[A] = this ~> Tee(sink)
-
   // drops the first upstream value and forwards the remaining upstream
   // consumes the first upstream value immediately, afterwards directly copies upstream
   def tail: Res[A] = this ~> Drop(1)
