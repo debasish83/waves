@@ -97,16 +97,16 @@ object OperationImpl {
   def apply(op: OperationX)(implicit upstream: Upstream, downstream: Downstream,
                             ctx: OperationProcessor.Context): OperationImpl =
     op.asInstanceOf[Operation[Any, Any]] match {
-      case Append(source)        ⇒ new ops.Append(source)
-      case Buffer(seed, f, g, h) ⇒ new ops.Buffer(seed, f, g, h)
-      case Drop(n)               ⇒ new ops.Drop(n)
-      case Filter(f)             ⇒ new ops.Filter(f)
-      case Fold(seed, f)         ⇒ new ops.Fold(seed, f)
-      case Map(f)                ⇒ new ops.Map(f)
-      case Multiply(factor)      ⇒ new ops.Multiply(factor)
-      case Process(seed, f, g)   ⇒ new ops.Process(seed, f, g)
-      case Split(f)              ⇒ new ops.Split(f)
-      case Take(n)               ⇒ new ops.Take(n)
+      case Append(source)         ⇒ new ops.Append(source)
+      case Buffer(seed, f, g, h)  ⇒ new ops.Buffer(seed, f, g, h)
+      case Drop(n)                ⇒ new ops.Drop(n)
+      case Filter(f)              ⇒ new ops.Filter(f)
+      case Fold(seed, f)          ⇒ new ops.Fold(seed, f)
+      case Map(f)                 ⇒ new ops.Map(f)
+      case Multiply(factor)       ⇒ new ops.Multiply(factor)
+      case Transform(transformer) ⇒ new ops.Transform(transformer)
+      case Split(f)               ⇒ new ops.Split(f)
+      case Take(n)                ⇒ new ops.Take(n)
       case _ ⇒ op match {
         // unfortunately, due to type inference issues, we don't seem to be able to add these to the main match directly
         case Flatten() ⇒ new ops.Flatten

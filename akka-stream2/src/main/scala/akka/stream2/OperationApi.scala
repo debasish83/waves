@@ -86,16 +86,12 @@ trait OperationApi1[A] extends Any {
   // produces the first A returned by f or optionally the given default value
   // consumes at max rate until f returns a Some, unsubscribes afterwards
   def mapFind[B](f: A ⇒ Option[B], default: ⇒ Option[B]): Res[B] =
-    this ~> Process[A, B, Unit](
-      seed = (),
-      onNext = (_, x) ⇒ f(x) match {
-        case Some(value) ⇒ Process.Emit(value, Process.Stop)
-        case None        ⇒ ContinueUnit
-      },
-      onComplete = _ ⇒ default match {
-        case Some(value) ⇒ Process.Emit(value, Process.Stop)
-        case None        ⇒ Process.Stop
-      })
+    transform {
+      new Transformer[A, B] {
+        def onNext(elem: A) = f(elem).toList
+        override def onComplete = default.toList
+      }
+    }
 
   // merges the values produced by the given source into the consumed stream
   // consumes from the upstream and the given source no faster than the downstream
@@ -110,11 +106,9 @@ trait OperationApi1[A] extends Any {
   // chains in the given operation
   def op[B](operation: A ==> B): Res[B] = this ~> operation
 
-  // generalized process potentially producing several output values
-  // consumes at max rate as long as `onNext` returns `Continue`
-  // produces no faster than the upstream
-  def process[S, B](seed: S)(f: (S, A) ⇒ Process.Command[B, S])(onComplete: S ⇒ Process.Command[B, S]): Res[B] =
-    this ~> Process(seed, f, onComplete)
+  // general stream transformation
+  def transform[B](transformer: Transformer[A, B]): Res[B] =
+    this ~> Transform(transformer)
 
   // splits the upstream into sub-streams based on the commands produced by the given function,
   // never produces empty sub-streams
@@ -131,10 +125,13 @@ trait OperationApi1[A] extends Any {
   // forwards as long as p returns true, unsubscribes afterwards
   // consumes no faster than the downstream, produces no faster than the upstream
   def takeWhile(p: A ⇒ Boolean): Res[A] =
-    this ~> Process[A, A, Unit](
-      seed = (),
-      onNext = (_, elem) ⇒ if (p(elem)) Process.Emit(elem, ContinueUnit) else Process.Stop,
-      onComplete = _ ⇒ Process.Stop)
+    transform {
+      new Transformer[A, A] {
+        private[this] var _isComplete = false
+        override def isComplete = _isComplete
+        def onNext(elem: A) = if (p(elem)) elem :: Nil else { _isComplete = true; Nil }
+      }
+    }
 
   // combines the upstream and the given source into tuples
   // produces at the rate of the slower upstream (i.e. no values are dropped)
@@ -146,8 +143,6 @@ trait OperationApi1[A] extends Any {
 object OperationApi1 {
   private val SomeTrue = Some(true)
   private val SomeFalse = Some(false)
-  private val _unit = Process.Continue[Nothing, Unit](())
-  private def ContinueUnit[T]: Process.Continue[T, Unit] = _unit.asInstanceOf[Process.Continue[T, Unit]]
 }
 
 trait OperationApi2[A] extends Any {

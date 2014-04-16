@@ -4,6 +4,7 @@ import scala.language.implicitConversions
 import org.reactivestreams.api.{ Consumer, Processor }
 import akka.actor.ActorRefFactory
 import akka.stream2.impl.OperationProcessor
+import scala.collection.immutable
 
 sealed trait OperationX // untyped base trait used for dealing with untyped operations
 
@@ -83,15 +84,13 @@ object Operation {
 
   final case class Multiply[T](factor: Int) extends (T ==> T)
 
-  //FIXME add a "name" String and fix toString so it is easy to delegate to Process and still retain proper toStrings
-  final case class Process[A, B, S](seed: S,
-                                    onNext: (S, A) ⇒ Process.Command[B, S],
-                                    onComplete: S ⇒ Process.Command[B, S]) extends (A ==> B)
-  object Process {
-    sealed trait Command[+T, +S]
-    final case class Emit[T, S](value: T, andThen: Command[T, S]) extends Command[T, S]
-    final case class Continue[T, S](nextState: S) extends Command[T, S]
-    case object Stop extends Command[Nothing, Nothing]
+  final case class Transform[A, B](transformer: Transformer[A, B]) extends (A ==> B)
+
+  trait Transformer[-A, +B] {
+    def onNext(elem: A): immutable.Seq[B]
+    def isComplete: Boolean = false
+    def onComplete: immutable.Seq[B] = Nil
+    def cleanup(): Unit = ()
   }
 
   final case class Take[T](n: Int) extends (T ==> T)
