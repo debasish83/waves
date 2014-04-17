@@ -1,6 +1,7 @@
 package akka.stream2
 
 import scala.language.{ higherKinds, implicitConversions }
+import scala.collection.immutable
 import org.reactivestreams.api.Producer
 import Operation._
 
@@ -20,6 +21,17 @@ trait OperationApi1[A] extends Any {
   // produces no faster than the rate with which `expand` produces B values
   def buffer[B, S](seed: S)(compress: (S, A) ⇒ S)(expand: S ⇒ (S, Option[B]))(canConsume: S ⇒ Boolean): Res[B] =
     this ~> Buffer(seed, compress, expand, canConsume)
+
+  // filters the stream with the partial function and maps to its results
+  def collect[B](pf: PartialFunction[A, B]): Res[B] =
+    transform {
+      new Transformer[A, B] with (B ⇒ immutable.Seq[B]) {
+        val pfa: PartialFunction[A, immutable.Seq[B]] = pf andThen this
+        val nil: A ⇒ immutable.Seq[B] = _ ⇒ Nil
+        def apply(b: B): immutable.Seq[B] = b :: Nil
+        def onNext(elem: A) = pfa.applyOrElse(elem, nil)
+      }
+    }
 
   // "compresses" a fast upstream by keeping one element buffered and reducing surplus values using the given function
   // consumes at max rate, produces no faster than the upstream
@@ -63,11 +75,6 @@ trait OperationApi1[A] extends Any {
   def find(p: A ⇒ Boolean): Res[A] =
     mapFind(x ⇒ if (p(x)) Some(x) else None, None)
 
-  // combined map & concat operation
-  // consumes no faster than the downstream, produces no faster than upstream or generated flows
-  def mapConcat[B, CC](f: A ⇒ CC)(implicit ev: CC <:< Producer[B]): Res[B] =
-    this ~> (Map[A, Producer[B]](b ⇒ ev(f(b))) ~> Flatten[B]())
-
   // classic fold
   // consumes at max rate, produces only one value
   def fold[B](seed: B)(f: (B, A) ⇒ B): Res[B] = this ~> Fold(seed, f)
@@ -83,6 +90,11 @@ trait OperationApi1[A] extends Any {
   // maps the given function over the upstream
   // does not affect consumption or production rates
   def map[B](f: A ⇒ B): Res[B] = this ~> Map(f)
+
+  // combined map & concat operation
+  // consumes no faster than the downstream, produces no faster than upstream or generated flows
+  def mapConcat[B, CC](f: A ⇒ CC)(implicit ev: CC <:< Producer[B]): Res[B] =
+    this ~> (Map[A, Producer[B]](b ⇒ ev(f(b))) ~> Flatten[B]())
 
   // produces the first A returned by f or optionally the given default value
   // consumes at max rate until f returns a Some, unsubscribes afterwards
