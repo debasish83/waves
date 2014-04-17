@@ -86,6 +86,8 @@ object Operation {
 
   final case class Multiply[T](factor: Int) extends (T ==> T)
 
+  final case class OnTerminate[T](callback: Option[Throwable] ⇒ Any) extends (T ==> T)
+
   final case class Transform[A, B](transformer: Transformer[A, B]) extends (A ==> B)
 
   trait Transformer[-A, +B] {

@@ -104,6 +104,7 @@ object OperationImpl {
       case Fold(seed, f)          ⇒ new ops.Fold(seed, f)
       case Map(f)                 ⇒ new ops.Map(f)
       case Multiply(factor)       ⇒ new ops.Multiply(factor)
+      case OnTerminate(callback)  ⇒ new ops.OnTerminate(callback)
       case Transform(transformer) ⇒ new ops.Transform(transformer)
       case Split(f)               ⇒ new ops.Split(f)
       case Take(n)                ⇒ new ops.Take(n)

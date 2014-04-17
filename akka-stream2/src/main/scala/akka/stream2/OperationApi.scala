@@ -104,6 +104,21 @@ trait OperationApi1[A] extends Any {
   // produces the `factor` elements for one element from upstream at max rate
   def multiply(factor: Int): Res[A] = this ~> Multiply[A](factor)
 
+  // attaches the given callback which "listens" to `onComplete' events
+  // without otherwise affecting the stream
+  def onComplete[U](callback: ⇒ U): Res[A] =
+    onTerminate { errorOption ⇒ if (errorOption.isEmpty) callback }
+
+  // attaches the given callback which "listens" to `onError' events
+  // without otherwise affecting the stream
+  def onError[U](callback: Throwable ⇒ U): Res[A] =
+    onTerminate { errorOption ⇒ if (errorOption.isDefined) callback(errorOption.get) }
+
+  // attaches the given callback which "listens" to `onComplete' and `onError` events
+  // without otherwise affecting the stream
+  def onTerminate[U](callback: Option[Throwable] ⇒ U): Res[A] =
+    this ~> OnTerminate[A](callback)
+
   // chains in the given operation
   def op[B](operation: A ==> B): Res[B] = this ~> operation
 
