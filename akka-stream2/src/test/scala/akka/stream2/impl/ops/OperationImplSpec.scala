@@ -34,10 +34,10 @@ abstract class OperationImplSpec extends FreeSpec with Matchers {
 
     private val chain = new OperationChain(op, upstream, downstream, processorContext)
 
-    private var requestSubUpstreamCalls = Seq.empty[(Producer[Any], () ⇒ SubDownstreamHandling)]
+    private var requestSubUpstreamCalls = Seq.empty[(Producer[_ <: Any], () ⇒ SubDownstreamHandling)]
     private def processorContext: OperationProcessor.Context =
       new OperationProcessor.Context {
-        def requestSubUpstream(producer: Producer[Any], subDownstream: ⇒ SubDownstreamHandling): Unit =
+        def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit =
           requestSubUpstreamCalls :+= producer -> subDownstream _
         def requestSubDownstream(subUpstream: ⇒ SubUpstreamHandling): Producer[Any] with Downstream =
           new Producer[Any] with Downstream with MockDownstream {

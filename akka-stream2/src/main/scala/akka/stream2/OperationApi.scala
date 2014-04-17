@@ -22,7 +22,7 @@ trait OperationApi1[A] extends Any {
   def buffer[B, S](seed: S)(compress: (S, A) ⇒ S)(expand: S ⇒ (S, Option[B]))(canConsume: S ⇒ Boolean): Res[B] =
     this ~> Buffer(seed, compress, expand, canConsume)
 
-  // filters the stream with the partial function and maps to its results
+  // filters the stream with a partial function and maps to its results
   def collect[B](pf: PartialFunction[A, B]): Res[B] =
     transform {
       new Transformer[A, B] with (B ⇒ immutable.Seq[B]) {
@@ -65,6 +65,14 @@ trait OperationApi1[A] extends Any {
       compress = (_, x) ⇒ Some(x),
       expand = s ⇒ (s, s),
       canConsume = _ ⇒ true)
+
+  // general customizable fan-in
+  def fanIn[B, C](secondary: Producer[B], fanIn: FanIn[A, B, C]): Res[C] =
+    this ~> FanInBox(secondary, fanIn)
+
+  // general customizable fan-out
+  def fanOut[B, C](fanOut: FanOut[A, B, C], secondary: Producer[C] ⇒ Unit): Res[B] =
+    this ~> FanOutBox(fanOut, secondary)
 
   // filters a streams according to the given predicate
   // immediately consumes more whenever p(t) is false
