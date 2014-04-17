@@ -45,12 +45,12 @@ class ExamplesSpec(override val system: ActorSystem) extends TestEnvironment(Tim
     "split" in {
       flow(1 to 10)
         .split(x ⇒ if (x % 4 == 0) Split.First else Split.Append)
-        .flatMap(Flow(_).fold("")(_ + _.toString).toProducer) should produce("123", "4567", "8910")
+        .mapConcat(Flow(_).fold("")(_ + _.toString).toProducer) should produce("123", "4567", "8910")
     }
 
     "custom operations" in {
       def splitAt4 = operation[Int].split(x ⇒ if (x % 4 == 0) Split.First else Split.Append)
-      def substreamsToString[T] = operation[Producer[T]].flatMap(Flow(_).fold("")(_ + _.toString).toProducer)
+      def substreamsToString[T] = operation[Producer[T]].mapConcat(Flow(_).fold("")(_ + _.toString).toProducer)
 
       flow(1 to 10).op(splitAt4).op(substreamsToString) should produce("123", "4567", "8910")
     }

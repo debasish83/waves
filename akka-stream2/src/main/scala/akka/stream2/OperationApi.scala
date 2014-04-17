@@ -63,9 +63,9 @@ trait OperationApi1[A] extends Any {
   def find(p: A ⇒ Boolean): Res[A] =
     mapFind(x ⇒ if (p(x)) Some(x) else None, None)
 
-  // general flatmap operation
+  // combined map & concat operation
   // consumes no faster than the downstream, produces no faster than upstream or generated flows
-  def flatMap[B, CC](f: A ⇒ CC)(implicit ev: CC <:< Producer[B]): Res[B] =
+  def mapConcat[B, CC](f: A ⇒ CC)(implicit ev: CC <:< Producer[B]): Res[B] =
     this ~> (Map[A, Producer[B]](b ⇒ ev(f(b))) ~> Flatten[B]())
 
   // classic fold
