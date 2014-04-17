@@ -2,6 +2,7 @@ package akka.stream2
 
 import scala.language.{ higherKinds, implicitConversions }
 import scala.collection.immutable
+import scala.util.{ Failure, Success, Try }
 import org.reactivestreams.api.{ Consumer, Producer }
 import Operation._
 
@@ -142,9 +143,16 @@ trait OperationApi1[A] extends Any {
   // chains in the given operation
   def op[B](operation: A ==> B): Res[B] = this ~> operation
 
+  // lifts errors from upstream back into the main data flow
+  def recover[B <: A](f: Throwable ⇒ immutable.Seq[B]): Res[B] = this ~> Recover(f)
+
   // general stream transformation
   def transform[B](transformer: Transformer[A, B]): Res[B] =
     this ~> Transform(transformer)
+
+  // lifts regular data and errors from upstream into a Try
+  def tryRecover: Res[Try[A]] =
+    this ~> (Map[A, Try[A]](Success(_)) ~> Recover[Try[A], Try[A]](t ⇒ Failure(t) :: Nil))
 
   // splits the upstream into sub-streams based on the commands produced by the given function,
   // never produces empty sub-streams

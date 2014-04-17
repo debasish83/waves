@@ -135,6 +135,8 @@ object Operation {
 
   final case class OnTerminate[T](callback: Option[Throwable] ⇒ Any) extends (T ==> T)
 
+  final case class Recover[A, B <: A](f: Throwable ⇒ immutable.Seq[B]) extends (A ==> B)
+
   final case class Split[T](f: T ⇒ Split.Command) extends (T ==> Producer[T])
   object Split {
     sealed trait Command
