@@ -35,11 +35,11 @@ abstract class OperationImplSpec extends FreeSpec with Matchers {
 
     private var verifiedForCleanExit = Seq.empty[Either[MockUpstream, MockDownstream]]
 
-    private var requestSubUpstreamCalls = Seq.empty[(Flow[Any], () ⇒ SubDownstreamHandling)]
+    private var requestSubUpstreamCalls = Seq.empty[(Producer[Any], () ⇒ SubDownstreamHandling)]
     private def processorContext: OperationProcessor.Context =
       new OperationProcessor.Context {
-        def requestSubUpstream(flow: Flow[Any], subDownstream: ⇒ SubDownstreamHandling): Unit =
-          requestSubUpstreamCalls :+= flow -> subDownstream _
+        def requestSubUpstream(producer: Producer[Any], subDownstream: ⇒ SubDownstreamHandling): Unit =
+          requestSubUpstreamCalls :+= producer -> subDownstream _
         def requestSubDownstream(subUpstream: ⇒ SubUpstreamHandling): Producer[Any] with Downstream =
           new Producer[Any] with Downstream with MockDownstream {
             verifiedForCleanExit :+= Right(this)
@@ -53,14 +53,14 @@ abstract class OperationImplSpec extends FreeSpec with Matchers {
           }
       }
 
-    def expectRequestSubUpstream(flow: Flow[Any]): SubDownstreamInterface =
+    def expectRequestSubUpstream(producer: Producer[_ <: Any]): SubDownstreamInterface =
       requestSubUpstreamCalls match {
-        case Seq((`flow`, subDownstreamHandling)) ⇒
+        case Seq((`producer`, subDownstreamHandling)) ⇒
           requestSubUpstreamCalls = Nil
           val mockUpstream = new SubDownstreamInterface(subDownstreamHandling)
           verifiedForCleanExit :+= Left(mockUpstream)
           mockUpstream
-        case x ⇒ fail(s"Expected ${callsToString("requestSubUpstream", Seq(flow))} but got " +
+        case x ⇒ fail(s"Expected ${callsToString("requestSubUpstream", Seq(producer))} but got " +
           callsToString("requestSubUpstream", x.map(_._1)))
       }
     def expectNoRequestSubUpstream(): Unit =
@@ -117,8 +117,8 @@ abstract class OperationImplSpec extends FreeSpec with Matchers {
         def onError(cause: Throwable): Unit = onErrorCalls :+= cause
       }
 
-    def expectNextSubFlow(): MockDownstream = onNextCalls match {
-      case Seq(Flow.Unmapped(x: MockDownstream)) ⇒
+    def expectNextSubProducer(): MockDownstream = onNextCalls match {
+      case Seq(x: MockDownstream) ⇒
         onNextCalls = Nil
         x
       case _ ⇒ fail(s"Expected `onNext(Flow)` but got " + callsToString("onNext", onNextCalls))
@@ -148,12 +148,11 @@ abstract class OperationImplSpec extends FreeSpec with Matchers {
     def cancel(): Unit
   }
 
-  def mockFlow[T]: Flow[T] = Flow {
+  def mockProducer[T] =
     new Producer[T] {
       def getPublisher: Publisher[T] = throw new IllegalStateException // should never be called in a test
       def produceTo(consumer: Consumer[T]): Unit = throw new IllegalStateException // should never be called in a test
     }
-  }
 
   case class TestException(msg: String) extends RuntimeException(msg) with NoStackTrace
   object TestException extends TestException("TEST")

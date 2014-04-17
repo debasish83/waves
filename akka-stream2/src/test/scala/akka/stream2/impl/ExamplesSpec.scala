@@ -2,6 +2,7 @@ package org.reactivestreams.tck // TODO: move back out of this package once the 
 
 import scala.collection.immutable.VectorBuilder
 import scala.annotation.tailrec
+import org.reactivestreams.api.Producer
 import org.reactivestreams.spi.Publisher
 import org.scalatest.matchers.Matcher
 import akka.stream2.impl.OperationProcessor
@@ -34,22 +35,22 @@ class ExamplesSpec(override val system: ActorSystem) extends TestEnvironment(Tim
     }
 
     "append" in {
-      flow(1 to 10).concat(flow(11 to 20)) should produce(1 to 20)
+      flow(1 to 10).concat(flow(11 to 20).toProducer) should produce(1 to 20)
     }
 
     "flatten" in {
-      flow(flow(1 to 10), flow(11 to 20)).flatten should produce(1 to 20)
+      flow(flow(1 to 10).toProducer, flow(11 to 20).toProducer).flatten should produce(1 to 20)
     }
 
     "split" in {
       flow(1 to 10)
         .split(x ⇒ if (x % 4 == 0) Split.First else Split.Append)
-        .flatMap(_.fold("")(_ + _.toString)) should produce("123", "4567", "8910")
+        .flatMap(Flow(_).fold("")(_ + _.toString).toProducer) should produce("123", "4567", "8910")
     }
 
     "custom operations" in {
       def splitAt4 = operation[Int].split(x ⇒ if (x % 4 == 0) Split.First else Split.Append)
-      def substreamsToString[T] = operation[Flow[T]].flatMap(_.fold("")(_ + _.toString))
+      def substreamsToString[T] = operation[Producer[T]].flatMap(Flow(_).fold("")(_ + _.toString).toProducer)
 
       flow(1 to 10).op(splitAt4).op(substreamsToString) should produce("123", "4567", "8910")
     }

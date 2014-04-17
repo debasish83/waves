@@ -4,8 +4,8 @@ import akka.stream2.Operation
 
 class ConcatSpec extends OperationImplSpec {
 
-  val flow2 = mockFlow[Char]
-  val op = Operation.Concat[Char](flow2)
+  val producer2 = mockProducer[Char]
+  val op = Operation.Concat[Char](producer2)
 
   "`Concat` should" - {
 
@@ -26,7 +26,7 @@ class ConcatSpec extends OperationImplSpec {
       "not propagate complete" in new Test(op) {
         onComplete()
         expectNoComplete()
-        expectRequestSubUpstream(flow2)
+        expectRequestSubUpstream(producer2)
       }
 
       "propagate error" in new Test(op) {
@@ -48,7 +48,7 @@ class ConcatSpec extends OperationImplSpec {
         requestMore(1)
         expectRequestMore(1)
         onComplete()
-        expectRequestSubUpstream(flow2)
+        expectRequestSubUpstream(producer2)
       }
 
       "gather up requestMore calls from downstream" in new Test(op) {
@@ -101,7 +101,7 @@ class ConcatSpec extends OperationImplSpec {
         requestMore(1)
         expectRequestMore(1)
         onComplete()
-        val upstream2 = expectRequestSubUpstream(flow2)
+        val upstream2 = expectRequestSubUpstream(producer2)
         upstream2.onSubscribe()
         upstream2.expectRequestMore(1)
         upstream2

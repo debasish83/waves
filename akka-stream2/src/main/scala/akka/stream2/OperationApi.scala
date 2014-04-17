@@ -1,6 +1,7 @@
 package akka.stream2
 
 import scala.language.{ higherKinds, implicitConversions }
+import org.reactivestreams.api.Producer
 import Operation._
 
 trait OperationApi1[A] extends Any {
@@ -11,8 +12,8 @@ trait OperationApi1[A] extends Any {
   def ~>[B](next: A ==> B): Res[B]
 
   // appends the given flow to the end of this stream
-  def concat(flow: Flow[A]): Res[A] =
-    this ~> Concat(flow)
+  def concat(producer: Producer[A]): Res[A] =
+    this ~> Concat(producer)
 
   // adds (bounded or unbounded) pressure elasticity
   // consumes at max rate as long as `canConsume` is true,
@@ -64,8 +65,8 @@ trait OperationApi1[A] extends Any {
 
   // general flatmap operation
   // consumes no faster than the downstream, produces no faster than upstream or generated flows
-  def flatMap[B, CC](f: A ⇒ CC)(implicit ev: CC <:< Flow[B]): Res[B] =
-    this ~> (Map[A, Flow[B]](b ⇒ ev(f(b))) ~> Flatten[B]())
+  def flatMap[B, CC](f: A ⇒ CC)(implicit ev: CC <:< Producer[B]): Res[B] =
+    this ~> (Map[A, Producer[B]](b ⇒ ev(f(b))) ~> Flatten[B]())
 
   // classic fold
   // consumes at max rate, produces only one value
@@ -96,7 +97,7 @@ trait OperationApi1[A] extends Any {
   // merges the values produced by the given flow into the consumed stream
   // consumes from the upstream and the given flow no faster than the downstream
   // produces no faster than the combined rate from upstream and the given flow
-  def merge[BB >: A](flow: Flow[BB]): Res[BB] = this ~> Merge(flow)
+  def merge[BB >: A](producer: Producer[BB]): Res[BB] = this ~> Merge(producer)
 
   // repeats each element coming in from upstream `factor` times
   // consumes from the upstream and downstream consumption rate divided by factor
@@ -112,7 +113,7 @@ trait OperationApi1[A] extends Any {
 
   // splits the upstream into sub-streams based on the commands produced by the given function,
   // never produces empty sub-streams
-  def split(f: A ⇒ Split.Command): Res[Flow[A]] = this ~> Split(f)
+  def split(f: A ⇒ Split.Command): Res[Producer[A]] = this ~> Split(f)
 
   // drops the first upstream value and forwards the remaining upstream
   // consumes the first upstream value immediately, afterwards directly copies upstream
@@ -137,7 +138,7 @@ trait OperationApi1[A] extends Any {
   // produces at the rate of the slower upstream (i.e. no values are dropped)
   // consumes from the upstream no faster than the downstream consumption rate or the production rate of the given flow
   // consumes from the given flow no faster than the downstream consumption rate or the upstream production rate
-  def zip[B](flow: Flow[B]): Res[(A, B)] = this ~> Zip(flow)
+  def zip[B](producer: Producer[B]): Res[(A, B)] = this ~> Zip(producer)
 }
 
 object OperationApi1 {
@@ -148,12 +149,12 @@ object OperationApi1 {
 trait OperationApi2[A] extends Any {
   type Res[_]
 
-  def ~>[B](next: Flow[A] ==> B): Res[B]
+  def ~>[B](next: Producer[A] ==> B): Res[B]
 
   // flattens the upstream by concatenation
   // consumes no faster than the downstream, produces no faster than the flows in the upstream
   def flatten: Res[A] = this ~> Flatten()
 
   // splits nested streams into a tuple of head-element and tail stream
-  def headAndTail: Res[(A, Flow[A])] = this ~> HeadAndTail()
+  def headAndTail: Res[(A, Producer[A])] = this ~> HeadAndTail()
 }

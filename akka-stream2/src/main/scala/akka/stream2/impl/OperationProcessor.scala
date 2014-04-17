@@ -48,7 +48,7 @@ object OperationProcessor {
   case class Job(thunk: () ⇒ Unit)
 
   trait Context {
-    def requestSubUpstream(flow: Flow[Any], subDownstream: ⇒ SubDownstreamHandling): Unit
+    def requestSubUpstream(producer: Producer[Any], subDownstream: ⇒ SubDownstreamHandling): Unit
     def requestSubDownstream(subUpstream: ⇒ SubUpstreamHandling): Producer[Any] with Downstream
   }
 
@@ -108,8 +108,8 @@ object OperationProcessor {
       if (!isShutdown) self ! UnregisterSubscription(subscription)
 
     // Context interface
-    def requestSubUpstream(flow: Flow[Any], subDownstream: ⇒ SubDownstreamHandling): Unit =
-      flow.toProducer.getPublisher.subscribe {
+    def requestSubUpstream(producer: Producer[Any], subDownstream: ⇒ SubDownstreamHandling): Unit =
+      producer.getPublisher.subscribe {
         new Subscriber[Any] {
           def onSubscribe(subscription: spi.Subscription): Unit = schedule(subDownstream.subOnSubscribe(Upstream(subscription)))
           def onNext(element: Any): Unit = schedule(subDownstream.subOnNext(element))

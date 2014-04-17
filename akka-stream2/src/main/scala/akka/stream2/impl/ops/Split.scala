@@ -50,7 +50,7 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
         val substream = ctx.requestSubDownstream(behavior.asInstanceOf[SubUpstreamHandling])
         become(new WaitingForSubstreamRequestMore(substream, firstElement, completeAfterFirstElement))
         mainRequested -= 1
-        downstream.onNext(Flow(substream))
+        downstream.onNext(substream)
         if (upstreamCompleted) downstream.onComplete()
         else if (upstreamError.isDefined) downstream.onError(upstreamError.get)
       }

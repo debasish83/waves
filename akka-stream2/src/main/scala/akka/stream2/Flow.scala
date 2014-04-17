@@ -31,9 +31,9 @@ object Flow {
     def ~>[B](next: A ==> B): Flow[B] = flow ~> next
   }
 
-  implicit class Api2[A](val flow: Flow[Flow[A]]) extends OperationApi2[A] {
+  implicit class Api2[A](val flow: Flow[Producer[A]]) extends OperationApi2[A] {
     type Res[B] = Flow[B]
-    def ~>[B](next: Flow[A] ==> B): Flow[B] = flow ~> next
+    def ~>[B](next: Producer[A] ==> B): Flow[B] = flow ~> next
   }
 
   /////////////////////// MODEL //////////////////////

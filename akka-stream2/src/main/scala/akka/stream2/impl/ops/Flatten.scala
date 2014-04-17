@@ -3,7 +3,7 @@ package ops
 
 import akka.stream2.impl.OperationImpl.Terminated
 import OperationProcessor.SubDownstreamHandling
-import akka.stream2.Flow
+import org.reactivestreams.api.Producer
 
 class Flatten(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
   extends OperationImpl.Stateful {
@@ -20,10 +20,10 @@ class Flatten(implicit val upstream: Upstream, val downstream: Downstream, ctx: 
       }
       override def onNext(element: Any) =
         element match {
-          case flow: Flow[_] ⇒
+          case producer: Producer[_] ⇒
             become(new WaitingForSubstreamSubscription)
-            ctx.requestSubUpstream(flow, behavior.asInstanceOf[SubDownstreamHandling])
-          case _ ⇒ sys.error("Illegal operation setup, expected `Flow[_]` but got " + element)
+            ctx.requestSubUpstream(producer.asInstanceOf[Producer[Any]], behavior.asInstanceOf[SubDownstreamHandling])
+          case _ ⇒ sys.error("Illegal operation setup, expected `Producer[_]` but got " + element)
         }
     }
 
