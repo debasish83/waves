@@ -97,7 +97,7 @@ object OperationImpl {
   def apply(op: OperationX)(implicit upstream: Upstream, downstream: Downstream,
                             ctx: OperationProcessor.Context): OperationImpl =
     op.asInstanceOf[Operation[Any, Any]] match {
-      case Concat(producer)       ⇒ new ops.Concat(producer)
+      case Concat(next)           ⇒ new ops.Concat(next)
       case Buffer(seed, f, g, h)  ⇒ new ops.Buffer(seed, f, g, h)
       case Drop(n)                ⇒ new ops.Drop(n)
       case Filter(f)              ⇒ new ops.Filter(f)
@@ -111,7 +111,7 @@ object OperationImpl {
       case Tee(f)                 ⇒ new ops.Tee(f)
       case _ ⇒ op match {
         // unfortunately, due to type inference issues, we don't seem to be able to add these to the main match directly
-        case Flatten() ⇒ new ops.Flatten
+        case ConcatAll() ⇒ new ops.ConcatAll()
       }
     }
 }

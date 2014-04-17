@@ -5,7 +5,7 @@ import akka.stream2.impl.OperationImpl.Terminated
 import OperationProcessor.SubDownstreamHandling
 import org.reactivestreams.api.Producer
 
-class Flatten(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
+class ConcatAll(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
   extends OperationImpl.Stateful {
 
   var requested = 0

@@ -5,7 +5,8 @@ import akka.stream2.impl.OperationImpl.Terminated
 import org.reactivestreams.api.Producer
 import OperationProcessor.SubDownstreamHandling
 
-class Concat(producer: Producer[Any])(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
+class Concat(next: () ⇒ Producer[Any])(implicit val upstream: Upstream, val downstream: Downstream,
+                                       ctx: OperationProcessor.Context)
   extends OperationImpl.Stateful {
 
   def initialBehavior: Behavior =
@@ -21,7 +22,7 @@ class Concat(producer: Producer[Any])(implicit val upstream: Upstream, val downs
       }
       override def onComplete(): Unit = {
         become(new WaitingForSecondFlowSubscription(requested))
-        ctx.requestSubUpstream(producer, behavior.asInstanceOf[SubDownstreamHandling])
+        ctx.requestSubUpstream(next(), behavior.asInstanceOf[SubDownstreamHandling])
       }
     }
 

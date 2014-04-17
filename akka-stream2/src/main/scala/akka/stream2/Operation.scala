@@ -50,7 +50,9 @@ object Operation {
                                    expand: S ⇒ (S, Option[B]),
                                    canConsume: S ⇒ Boolean) extends (A ==> B)
 
-  final case class Concat[T](producer: Producer[T]) extends (T ==> T)
+  final case class Concat[T](next: () ⇒ Producer[T]) extends (T ==> T)
+
+  final case class ConcatAll[T]() extends (Producer[T] ==> T)
 
   final case class Drop[T](n: Int) extends (T ==> T)
 
@@ -112,8 +114,6 @@ object Operation {
   }
 
   final case class Filter[T](p: T ⇒ Boolean) extends (T ==> T)
-
-  final case class Flatten[T]() extends (Producer[T] ==> T)
 
   final case class Fold[A, B](seed: B, f: (B, A) ⇒ B) extends (A ==> B)
 

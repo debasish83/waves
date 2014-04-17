@@ -38,8 +38,8 @@ class ExamplesSpec(override val system: ActorSystem) extends TestEnvironment(Tim
       flow(1 to 10).concat(flow(11 to 20).toProducer) should produce(1 to 20)
     }
 
-    "flatten" in {
-      flow(flow(1 to 10).toProducer, flow(11 to 20).toProducer).flatten should produce(1 to 20)
+    "concatAll" in {
+      flow(flow(1 to 10).toProducer, flow(11 to 20).toProducer).concatAll should produce(1 to 20)
     }
 
     "split" in {

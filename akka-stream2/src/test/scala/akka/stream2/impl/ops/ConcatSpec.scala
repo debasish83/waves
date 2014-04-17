@@ -5,7 +5,7 @@ import akka.stream2.Operation
 class ConcatSpec extends OperationImplSpec {
 
   val producer2 = mockProducer[Char]
-  val op = Operation.Concat[Char](producer2)
+  val op = Operation.Concat[Char](() ⇒ producer2)
 
   "`Concat` should" - {
 

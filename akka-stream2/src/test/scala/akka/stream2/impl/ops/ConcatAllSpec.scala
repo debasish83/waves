@@ -2,9 +2,9 @@ package akka.stream2.impl.ops
 
 import akka.stream2.Operation
 
-class FlattenSpec extends OperationImplSpec {
+class ConcatAllSpec extends OperationImplSpec {
 
-  val op = Operation.Flatten[Char]()
+  val op = Operation.ConcatAll[Char]()
 
   "`Flatten` should" - {
 

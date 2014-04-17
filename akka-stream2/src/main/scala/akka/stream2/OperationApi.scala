@@ -13,8 +13,8 @@ trait OperationApi1[A] extends Any {
   def ~>[B](next: A ==> B): Res[B]
 
   // appends the given flow to the end of this stream
-  def concat(producer: Producer[A]): Res[A] =
-    this ~> Concat(producer)
+  def concat(next: ⇒ Producer[A]): Res[A] =
+    this ~> Concat(next _)
 
   // adds (bounded or unbounded) pressure elasticity
   // consumes at max rate as long as `canConsume` is true,
@@ -102,7 +102,7 @@ trait OperationApi1[A] extends Any {
   // combined map & concat operation
   // consumes no faster than the downstream, produces no faster than upstream or generated flows
   def mapConcat[B, CC](f: A ⇒ CC)(implicit ev: CC <:< Producer[B]): Res[B] =
-    this ~> (Map[A, Producer[B]](b ⇒ ev(f(b))) ~> Flatten[B]())
+    this ~> (Map[A, Producer[B]](b ⇒ ev(f(b))) ~> ConcatAll[B]())
 
   // produces the first A returned by f or optionally the given default value
   // consumes at max rate until f returns a Some, unsubscribes afterwards
@@ -194,7 +194,7 @@ trait OperationApi2[A] extends Any {
 
   // flattens the upstream by concatenation
   // consumes no faster than the downstream, produces no faster than the flows in the upstream
-  def flatten: Res[A] = this ~> Flatten()
+  def concatAll: Res[A] = this ~> ConcatAll()
 
   // splits nested streams into a tuple of head-element and tail stream
   def headAndTail: Res[(A, Producer[A])] = this ~> HeadAndTail()
