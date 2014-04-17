@@ -97,5 +97,7 @@ object Operation {
 
   final case class Take[T](n: Int) extends (T ==> T)
 
+  final case class Tee[T](f: Producer[T] ⇒ Unit) extends (T ==> T)
+
   final case class Zip[A, B, C](producer: Producer[C]) extends (A ==> (B, C))
 }

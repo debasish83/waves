@@ -108,6 +108,7 @@ object OperationImpl {
       case Transform(transformer) ⇒ new ops.Transform(transformer)
       case Split(f)               ⇒ new ops.Split(f)
       case Take(n)                ⇒ new ops.Take(n)
+      case Tee(f)                 ⇒ new ops.Tee(f)
       case _ ⇒ op match {
         // unfortunately, due to type inference issues, we don't seem to be able to add these to the main match directly
         case Flatten() ⇒ new ops.Flatten

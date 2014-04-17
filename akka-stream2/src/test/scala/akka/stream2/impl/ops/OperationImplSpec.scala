@@ -7,7 +7,6 @@ import akka.stream2.{ Flow, Operation }
 import akka.stream2.impl.OperationProcessor.{ SubUpstreamHandling, SubDownstreamHandling }
 import org.reactivestreams.api.{ Consumer, Producer }
 import org.reactivestreams.spi.Publisher
-import scala.reflect.ClassTag
 
 abstract class OperationImplSpec extends FreeSpec with Matchers {
 
@@ -31,9 +30,9 @@ abstract class OperationImplSpec extends FreeSpec with Matchers {
       }
     }
 
-    private val chain = new OperationChain(op, upstream, downstream, processorContext)
-
     private var verifiedForCleanExit = Seq.empty[Either[MockUpstream, MockDownstream]]
+
+    private val chain = new OperationChain(op, upstream, downstream, processorContext)
 
     private var requestSubUpstreamCalls = Seq.empty[(Producer[Any], () ⇒ SubDownstreamHandling)]
     private def processorContext: OperationProcessor.Context =

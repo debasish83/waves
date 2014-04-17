@@ -2,7 +2,7 @@ package akka.stream2
 
 import scala.language.{ higherKinds, implicitConversions }
 import scala.collection.immutable
-import org.reactivestreams.api.Producer
+import org.reactivestreams.api.{ Consumer, Producer }
 import Operation._
 
 trait OperationApi1[A] extends Any {
@@ -149,6 +149,12 @@ trait OperationApi1[A] extends Any {
   // forwards the first n upstream values, unsubscribes afterwards
   // consumes no faster than the downstream, produces no faster than the upstream
   def take(n: Int): Res[A] = this ~> Take[A](n)
+
+  // splits the upstream into two downstreams that will receive the exact same elements in the same sequence
+  def tee(consumer: Consumer[A]): Res[A] = tee(_.produceTo(consumer))
+
+  // splits the upstream into two downstreams that will receive the exact same elements in the same sequence
+  def tee(f: Producer[A] ⇒ Unit): Res[A] = this ~> Tee[A](f)
 
   // forwards as long as p returns true, unsubscribes afterwards
   // consumes no faster than the downstream, produces no faster than the upstream
