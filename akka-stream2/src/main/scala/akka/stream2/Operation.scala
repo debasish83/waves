@@ -17,15 +17,6 @@ sealed abstract class Operation[-A, +B] extends OperationX {
       case (_, _: Identity[_]) ⇒ this.asInstanceOf[A ==> C]
       case _                   ⇒ Operation.~>(this, other)
     }
-
-  def toProcessor[AA <: A, BB >: B](implicit refFactory: ActorRefFactory): Processor[AA, BB] =
-    new OperationProcessor(this).asInstanceOf[Processor[AA, BB]] // TODO: introduce implicit settings allowing for buffer size config
-
-  def produceTo[AA <: A, BB >: B](consumer: Consumer[BB])(implicit refFactory: ActorRefFactory): Consumer[AA] = {
-    val processor = toProcessor[A, BB]
-    processor.produceTo(consumer)
-    processor.asInstanceOf[Consumer[AA]]
-  }
 }
 
 object Operation {
@@ -35,6 +26,13 @@ object Operation {
   implicit class Api1[A, B](val op: A ==> B) extends OperationApi1[B] {
     type Res[C] = A ==> C
     def ~>[C](next: B ==> C): Res[C] = op ~> next
+    def toProcessor(implicit refFactory: ActorRefFactory): Processor[A, B] =
+      new OperationProcessor(op) // TODO: introduce implicit settings allowing for buffer size config
+    def produceTo(consumer: Consumer[B])(implicit refFactory: ActorRefFactory): Consumer[A] = {
+      val processor = toProcessor
+      processor.produceTo(consumer)
+      processor
+    }
   }
 
   implicit class Api2[A, B](val op: A ==> Producer[B]) extends OperationApi2[B] {
