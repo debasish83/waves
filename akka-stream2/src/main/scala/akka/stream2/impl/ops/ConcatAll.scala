@@ -1,9 +1,10 @@
-package akka.stream2.impl
+package akka.stream2
+package impl
 package ops
 
-import akka.stream2.impl.OperationImpl.Terminated
-import OperationProcessor.SubDownstreamHandling
 import org.reactivestreams.api.Producer
+import OperationImpl.Terminated
+import OperationProcessor.SubDownstreamHandling
 
 class ConcatAll(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
   extends OperationImpl.Stateful {

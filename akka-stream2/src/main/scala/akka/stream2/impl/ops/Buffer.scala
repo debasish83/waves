@@ -1,4 +1,5 @@
-package akka.stream2.impl
+package akka.stream2
+package impl
 package ops
 
 import scala.annotation.tailrec

@@ -1,8 +1,9 @@
-package akka.stream2.impl
+package akka.stream2
+package impl
 package ops
 
-import akka.stream2.impl.OperationImpl.Terminated
 import org.reactivestreams.api.Producer
+import OperationImpl.Terminated
 import OperationProcessor.SubDownstreamHandling
 
 class Concat(next: () ⇒ Producer[Any])(implicit val upstream: Upstream, val downstream: Downstream,

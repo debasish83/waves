@@ -4,6 +4,7 @@ import scala.language.{ higherKinds, implicitConversions }
 import scala.collection.immutable
 import scala.util.{ Failure, Success, Try }
 import org.reactivestreams.api.{ Consumer, Producer }
+import akka.actor.ActorRefFactory
 import Operation._
 
 trait OperationApi1[A] extends Any {
@@ -67,12 +68,8 @@ trait OperationApi1[A] extends Any {
       expand = s ⇒ (s, s),
       canConsume = _ ⇒ true)
 
-  // general customizable fan-in
-  def fanIn[B, C](secondary: Producer[B], fanIn: FanIn[A, B, C]): Res[C] =
-    this ~> FanInBox(secondary, fanIn)
-
   // general customizable fan-out
-  def fanOut[B, C](fanOut: FanOut[A, B, C], secondary: Producer[C] ⇒ Unit): Res[B] =
+  def fanOut[F[_] <: FanOut[_]](fanOut: FanOut.Provider[F], secondary: Producer[F[A]#O2] ⇒ Unit): Res[F[A]#O1] =
     this ~> FanOutBox(fanOut, secondary)
 
   // filters a streams according to the given predicate
@@ -94,14 +91,12 @@ trait OperationApi1[A] extends Any {
     mapFind(x ⇒ if (!p(x)) SomeFalse else None, SomeTrue)
 
   // produces the first upstream element, unsubscribes afterwards
-  def head: Res[A] = this ~> Take(1)
+  def headStream: Res[A] = this ~> Take(1)
 
   // maps the given function over the upstream
-  // does not affect consumption or production rates
   def map[B](f: A ⇒ B): Res[B] = this ~> Map(f)
 
   // combined map & concat operation
-  // consumes no faster than the downstream, produces no faster than upstream or generated flows
   def mapConcat[B, CC](f: A ⇒ CC)(implicit ev: CC <:< Producer[B]): Res[B] =
     this ~> (Map[A, Producer[B]](b ⇒ ev(f(b))) ~> ConcatAll[B]())
 
@@ -116,13 +111,9 @@ trait OperationApi1[A] extends Any {
     }
 
   // merges the values produced by the given flow into the consumed stream
-  // consumes from the upstream and the given flow no faster than the downstream
-  // produces no faster than the combined rate from upstream and the given flow
   def merge[BB >: A](producer: Producer[BB]): Res[BB] = this ~> Merge(producer)
 
   // repeats each element coming in from upstream `factor` times
-  // consumes from the upstream and downstream consumption rate divided by factor
-  // produces the `factor` elements for one element from upstream at max rate
   def multiply(factor: Int): Res[A] = this ~> Multiply[A](factor)
 
   // attaches the given callback which "listens" to `onComplete' events
@@ -142,6 +133,9 @@ trait OperationApi1[A] extends Any {
 
   // chains in the given operation
   def op[B](operation: A ==> B): Res[B] = this ~> operation
+
+  // transforms the underlying stream itself (not its elements) with the given function
+  def outerMap[B](f: Producer[A] ⇒ Producer[B]): Res[B] = this ~> OuterMap(f)
 
   // lifts errors from upstream back into the main data flow
   def recover[B <: A](f: Throwable ⇒ immutable.Seq[B]): Res[B] = this ~> Recover(f)
@@ -163,17 +157,15 @@ trait OperationApi1[A] extends Any {
   def tail: Res[A] = this ~> Drop(1)
 
   // forwards the first n upstream values, unsubscribes afterwards
-  // consumes no faster than the downstream, produces no faster than the upstream
   def take(n: Int): Res[A] = this ~> Take[A](n)
 
   // splits the upstream into two downstreams that will receive the exact same elements in the same sequence
   def tee(consumer: Consumer[A]): Res[A] = tee(_.produceTo(consumer))
 
   // splits the upstream into two downstreams that will receive the exact same elements in the same sequence
-  def tee(f: Producer[A] ⇒ Unit): Res[A] = this ~> Tee[A](f)
+  def tee(f: Producer[A] ⇒ Unit): Res[A] = this ~> FanOutBox[A, FanOut.Tee](FanOut.Tee, f)
 
   // forwards as long as p returns true, unsubscribes afterwards
-  // consumes no faster than the downstream, produces no faster than the upstream
   def takeWhile(p: A ⇒ Boolean): Res[A] =
     transform {
       new Transformer[A, A] {
@@ -185,8 +177,6 @@ trait OperationApi1[A] extends Any {
 
   // combines the upstream and the given flow into tuples
   // produces at the rate of the slower upstream (i.e. no values are dropped)
-  // consumes from the upstream no faster than the downstream consumption rate or the production rate of the given flow
-  // consumes from the given flow no faster than the downstream consumption rate or the upstream production rate
   def zip[B](producer: Producer[B]): Res[(A, B)] = this ~> Zip(producer)
 }
 
@@ -200,10 +190,15 @@ trait OperationApi2[A] extends Any {
 
   def ~>[B](next: Producer[A] ==> B): Res[B]
 
+  // "extracts" the first `Producer[A]` element of a stream of streams
+  def head: Res[A] = this ~> Head()
+
   // flattens the upstream by concatenation
-  // consumes no faster than the downstream, produces no faster than the flows in the upstream
   def concatAll: Res[A] = this ~> ConcatAll()
 
-  // splits nested streams into a tuple of head-element and tail stream
-  def headAndTail: Res[(A, Producer[A])] = this ~> HeadAndTail()
+  // alternative `concatAll` implementation
+  def concatAll2(implicit refFactory: ActorRefFactory): Res[A] =
+    this ~> OuterMap[Producer[A], A] {
+      case FanOut.Tee(p1, p2) ⇒ Flow(p1).head.concat(Flow(p2).tail.concatAll2.toProducer).toProducer
+    }
 }

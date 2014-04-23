@@ -1,10 +1,10 @@
-package akka.stream2.impl
+package akka.stream2
+package impl
 package ops
 
-import akka.stream2.Operation.Split._
-import akka.stream2.impl.OperationProcessor.SubUpstreamHandling
-import akka.stream2.Flow
-import akka.stream2.impl.OperationImpl.Terminated
+import OperationProcessor.SubUpstreamHandling
+import OperationImpl.Terminated
+import Operation.Split._
 
 class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream: Downstream,
                               ctx: OperationProcessor.Context)

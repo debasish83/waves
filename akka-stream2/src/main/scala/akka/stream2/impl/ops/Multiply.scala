@@ -1,8 +1,9 @@
-package akka.stream2.impl
+package akka.stream2
+package impl
 package ops
 
 import scala.annotation.tailrec
-import akka.stream2.impl.OperationImpl.Terminated
+import OperationImpl.Terminated
 
 class Multiply(factor: Int)(implicit val upstream: Upstream, val downstream: Downstream)
   extends OperationImpl.Stateful {

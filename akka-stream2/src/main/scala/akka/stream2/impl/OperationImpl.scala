@@ -1,30 +1,8 @@
 package akka.stream2
 package impl
 
-import org.reactivestreams.spi.Subscription
+import org.reactivestreams.api.Producer
 import OperationProcessor.{ SubUpstreamHandling, SubDownstreamHandling }
-
-// same as `Subscriber[T]`, but untyped and without `onSubscribe` and the "must be async" semantics
-trait Downstream {
-  def onNext(element: Any): Unit
-  def onComplete(): Unit
-  def onError(cause: Throwable): Unit
-}
-
-// same as `Subscription` TODO: consider switching to a type alias
-trait Upstream {
-  def requestMore(elements: Int): Unit
-  def cancel(): Unit
-}
-
-object Upstream {
-  def apply(subscription: Subscription): Upstream =
-    new Upstream {
-      def requestMore(elements: Int): Unit = subscription.requestMore(elements)
-      def cancel(): Unit = subscription.cancel()
-    }
-
-}
 
 trait OperationImpl extends Downstream with Upstream
 
@@ -100,6 +78,7 @@ object OperationImpl {
       case Concat(next)           ⇒ new ops.Concat(next)
       case Buffer(seed, f, g, h)  ⇒ new ops.Buffer(seed, f, g, h)
       case Drop(n)                ⇒ new ops.Drop(n)
+      case FanOutBox(fanOut, sec) ⇒ new ops.FanOutBox(fanOut.asInstanceOf[FanOut.Provider[FanOut]], sec.asInstanceOf[Producer[Any] ⇒ Unit])
       case Filter(f)              ⇒ new ops.Filter(f)
       case Fold(seed, f)          ⇒ new ops.Fold(seed, f)
       case Map(f)                 ⇒ new ops.Map(f)
@@ -108,7 +87,6 @@ object OperationImpl {
       case Transform(transformer) ⇒ new ops.Transform(transformer)
       case Split(f)               ⇒ new ops.Split(f)
       case Take(n)                ⇒ new ops.Take(n)
-      case Tee(f)                 ⇒ new ops.Tee(f)
       case _ ⇒ op match {
         // unfortunately, due to type inference issues, we don't seem to be able to add these to the main match directly
         case ConcatAll() ⇒ new ops.ConcatAll()

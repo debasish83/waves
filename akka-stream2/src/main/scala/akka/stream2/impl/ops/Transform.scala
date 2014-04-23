@@ -1,10 +1,11 @@
-package akka.stream2.impl
+package akka.stream2
+package impl
 package ops
 
 import scala.annotation.tailrec
 import scala.collection.immutable
-import akka.stream2.impl.OperationImpl.Terminated
-import akka.stream2.Operation.Transformer
+import OperationImpl.Terminated
+import Operation.Transformer
 
 class Transform(transformer: Transformer[Any, Any])(implicit val upstream: Upstream, val downstream: Downstream)
   extends OperationImpl.Stateful {

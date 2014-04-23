@@ -78,7 +78,7 @@ object OperationProcessor {
       case OnNext(element)                       ⇒ chain.onNext(element)
       case OnComplete                            ⇒ chain.onComplete()
       case OnError(e)                            ⇒ chain.onError(e)
-      case OnSubscribed(subscription)            ⇒ _chain = Some(new OperationChain(op, Upstream(subscription), this, this))
+      case OnSubscribed(subscription)            ⇒ _chain = Some(new OperationChain(op, subscription, this, this))
 
       // Publisher side
       case Subscribe(subscriber)                 ⇒ subscribe(subscriber)
@@ -111,7 +111,7 @@ object OperationProcessor {
     def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit =
       producer.getPublisher.subscribe {
         new Subscriber[T] {
-          def onSubscribe(subscription: spi.Subscription): Unit = schedule(subDownstream.subOnSubscribe(Upstream(subscription)))
+          def onSubscribe(subscription: spi.Subscription): Unit = schedule(subDownstream.subOnSubscribe(subscription))
           def onNext(element: T): Unit = schedule(subDownstream.subOnNext(element))
           def onComplete(): Unit = schedule(subDownstream.subOnComplete())
           def onError(cause: Throwable): Unit = schedule(subDownstream.subOnError(cause))

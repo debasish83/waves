@@ -1,6 +1,7 @@
-package akka.stream2.impl.ops
+package akka.stream2
+package impl
+package ops
 
-import akka.stream2.Operation
 import scala.util.DynamicVariable
 
 class TeeSpec extends OperationImplSpec {
@@ -8,7 +9,7 @@ class TeeSpec extends OperationImplSpec {
   val _sub = new DynamicVariable[MockDownstream](null)
   def sub = _sub.value
 
-  val op = Operation.Tee[Char](producer ⇒ _sub.value = producer.asInstanceOf[MockDownstream])
+  val op = Operation.FanOutBox[Char, FanOut.Tee](FanOut.Tee, producer ⇒ _sub.value = producer.asInstanceOf[MockDownstream])
 
   "`Tee` should" - {
 

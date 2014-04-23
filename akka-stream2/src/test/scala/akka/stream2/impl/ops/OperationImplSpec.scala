@@ -1,12 +1,12 @@
-package akka.stream2.impl
+package akka.stream2
+package impl
 package ops
 
 import scala.util.control.NoStackTrace
 import org.scalatest.{ Matchers, FreeSpec }
-import akka.stream2.{ Flow, Operation }
-import akka.stream2.impl.OperationProcessor.{ SubUpstreamHandling, SubDownstreamHandling }
 import org.reactivestreams.api.{ Consumer, Producer }
 import org.reactivestreams.spi.Publisher
+import OperationProcessor.{ SubUpstreamHandling, SubDownstreamHandling }
 
 abstract class OperationImplSpec extends FreeSpec with Matchers {
 
