@@ -69,7 +69,7 @@ trait OperationApi1[A] extends Any {
       canConsume = _ ⇒ true)
 
   // general customizable fan-in
-  def fanIn[B, F[_, _] <: FanIn[_, _]](secondary: Producer[B], fanIn: FanIn.Provider[F]): Res[F[A, B]#O] =
+  def fanIn[B, O](secondary: Producer[B], fanIn: FanIn.Provider[A, B, O]): Res[O] =
     this ~> FanInBox(secondary, fanIn)
 
   // general customizable fan-out
@@ -115,7 +115,8 @@ trait OperationApi1[A] extends Any {
     }
 
   // merges the values produced by the given flow into the consumed stream
-  def merge[B >: A](producer: Producer[B]): Res[B] = fanIn[B, FanIn.Merge](producer, FanIn.Merge)
+  def merge[AA >: A](secondary: Producer[_ <: AA]): Res[AA] =
+    fanIn(secondary.asInstanceOf[Producer[AA]], FanIn.Merge[A, AA]())
 
   // repeats each element coming in from upstream `factor` times
   def multiply(factor: Int): Res[A] = this ~> Multiply[A](factor)
@@ -181,7 +182,8 @@ trait OperationApi1[A] extends Any {
 
   // combines the upstream and the given flow into tuples
   // produces at the rate of the slower upstream (i.e. no values are dropped)
-  def zip[B](producer: Producer[B]): Res[(A, B)] = fanIn[B, FanIn.Zip](producer, FanIn.Zip)
+  def zip[B](secondary: Producer[B]): Res[(A, B)] =
+    fanIn(secondary, FanIn.Zip[A, B]())
 }
 
 object OperationApi1 {
@@ -196,6 +198,14 @@ trait OperationApi2[A] extends Any {
 
   // "extracts" the first `Producer[A]` element of a stream of streams
   def head: Res[A] = this ~> Head()
+
+  // maps the inner streams into a (head, tail) Tuple each
+  def headAndTail(implicit refFactory: ActorRefFactory): Res[(A, Producer[A])] = {
+    def headTail: Producer[A] ⇒ Producer[(A, Producer[A])] = {
+      case FanOut.Tee(p1, p2) ⇒ Flow(p1).headStream.map(_ -> Flow(p2).tail.toProducer).toProducer
+    }
+    this ~> (Map(headTail) ~> ConcatAll())
+  }
 
   // flattens the upstream by concatenation
   def concatAll: Res[A] = this ~> ConcatAll()

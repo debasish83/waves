@@ -5,8 +5,8 @@ import org.reactivestreams.api.Producer
 import akka.stream2.FanIn
 import OperationProcessor.SubDownstreamHandling
 
-class FanInBox(secondary: Producer[Any], fanInProvider: FanIn.Provider[FanIn])(implicit val upstream: Upstream,
-                                                                               val downstream: Downstream, ctx: OperationProcessor.Context)
+class FanInBox(secondary: Producer[Any], fanInProvider: FanIn.Provider[Any, Any, Any])(implicit val upstream: Upstream,
+                                                                                       val downstream: Downstream, ctx: OperationProcessor.Context)
   extends OperationImpl.Stateful {
 
   ctx.requestSubUpstream(secondary, behavior.asInstanceOf[SubDownstreamHandling])
@@ -32,7 +32,7 @@ class FanInBox(secondary: Producer[Any], fanInProvider: FanIn.Provider[FanIn])(i
       }
     }
 
-  def wired(fanIn: FanIn[Any, Any]): BehaviorWithSubDownstreamHandling =
+  def wired(fanIn: FanIn[Any, Any, Any]): BehaviorWithSubDownstreamHandling =
     new BehaviorWithSubDownstreamHandling {
       override def requestMore(elements: Int): Unit = fanIn.requestMore(elements)
       override def cancel(): Unit = fanIn.cancel()

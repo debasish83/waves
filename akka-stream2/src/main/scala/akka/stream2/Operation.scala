@@ -55,8 +55,8 @@ object Operation {
 
   final case class Drop[T](n: Int) extends (T ==> T)
 
-  final case class FanInBox[A, B, F[_, _] <: FanIn[_, _]](secondary: Producer[B], fanIn: FanIn.Provider[F])
-    extends (A ==> F[A, B]#O)
+  final case class FanInBox[I1, I2, O](secondary: Producer[I2], fanIn: FanIn.Provider[I1, I2, O])
+    extends (I1 ==> O)
 
   final case class FanOutBox[I, F[_] <: FanOut[_]](fanOut: FanOut.Provider[F], secondary: Producer[F[I]#O2] ⇒ Unit)
     extends (I ==> F[I]#O1)

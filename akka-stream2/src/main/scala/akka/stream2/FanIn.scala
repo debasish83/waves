@@ -4,9 +4,7 @@ import scala.language.higherKinds
 
 import akka.stream2.impl._
 
-trait FanIn[I1, I2] {
-  type O // output type
-
+trait FanIn[I1, I2, O] {
   def requestMore(elements: Int): Unit
   def cancel(): Unit
 
@@ -19,38 +17,36 @@ trait FanIn[I1, I2] {
 }
 
 object FanIn {
-  abstract class Provider[F[_, _] <: FanIn[_, _]] {
-    def apply(primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream): F[Any, Any]
+  trait Provider[I1, I2, O] {
+    def apply(primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream): FanIn[I1, I2, O]
   }
 
-  object Merge extends Provider[Merge] {
-    def apply(primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream): Merge[Any, Any] =
+  object Merge extends Provider[Any, Any, Any] {
+    def apply[A, AA >: A](): Provider[A, AA, AA] = this.asInstanceOf[Provider[A, AA, AA]]
+    def apply(primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream): Merge[Any] =
       new Merge(primaryUpstream, secondaryUpstream, downstream)
   }
 
-  class Merge[A, B](primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream) extends FanIn[A, B] {
-    type O = B // we cannot apply a B >: A type bound on this level, but we can (and do) on the API surface
-
+  class Merge[T](primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream) extends FanIn[T, T, T] {
     def requestMore(elements: Int): Unit = ???
     def cancel(): Unit = ???
 
-    def primaryOnNext(element: A): Unit = ???
+    def primaryOnNext(element: T): Unit = ???
     def primaryOnComplete(): Unit = ???
     def primaryOnError(cause: Throwable): Unit = ???
 
-    def secondaryOnNext(element: B): Unit = ???
+    def secondaryOnNext(element: T): Unit = ???
     def secondaryOnComplete(): Unit = ???
     def secondaryOnError(cause: Throwable): Unit = ???
   }
 
-  object Zip extends Provider[Zip] {
+  object Zip extends Provider[Any, Any, (Any, Any)] {
+    def apply[A, B](): Provider[A, B, (A, B)] = this.asInstanceOf[Provider[A, B, (A, B)]]
     def apply(primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream): Zip[Any, Any] =
       new Zip(primaryUpstream, secondaryUpstream, downstream)
   }
 
-  class Zip[A, B](primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream) extends FanIn[A, B] {
-    type O = (A, B)
-
+  class Zip[A, B](primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream) extends FanIn[A, B, (A, B)] {
     def requestMore(elements: Int): Unit = ???
     def cancel(): Unit = ???
 
