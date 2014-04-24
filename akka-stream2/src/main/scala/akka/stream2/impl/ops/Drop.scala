@@ -1,5 +1,4 @@
-package akka.stream2
-package impl
+package akka.stream2.impl
 package ops
 
 class Drop(count: Int)(implicit val upstream: Upstream, val downstream: Downstream) extends OperationImpl.Abstract {

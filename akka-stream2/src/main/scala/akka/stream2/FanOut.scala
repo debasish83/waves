@@ -3,16 +3,20 @@ package akka.stream2
 import scala.language.higherKinds
 
 import org.reactivestreams.api.Producer
-import akka.stream2.impl.OperationProcessor
 import akka.actor.ActorRefFactory
+import akka.stream2.impl._
 
-trait FanOut[T] extends Downstream {
+trait FanOut[T] {
   type O1 // primary output type
   type O2 // secondary output type
   def primaryRequestMore(elements: Int): Unit
   def primaryCancel(): Unit
   def secondaryRequestMore(elements: Int): Unit
   def secondaryCancel(): Unit
+
+  def onNext(element: T): Unit
+  def onComplete(): Unit
+  def onError(cause: Throwable): Unit
 }
 
 object FanOut {
@@ -41,7 +45,7 @@ object FanOut {
     var cancelled1 = false
     var cancelled2 = false
 
-    def onNext(element: Any): Unit = {
+    def onNext(element: T): Unit = {
       if (!cancelled1) primaryDownstream.onNext(element)
       if (!cancelled2) secondaryDownstream.onNext(element)
     }

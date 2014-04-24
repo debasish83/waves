@@ -68,6 +68,10 @@ trait OperationApi1[A] extends Any {
       expand = s ⇒ (s, s),
       canConsume = _ ⇒ true)
 
+  // general customizable fan-in
+  def fanIn[B, F[_, _] <: FanIn[_, _]](secondary: Producer[B], fanIn: FanIn.Provider[F]): Res[F[A, B]#O] =
+    this ~> FanInBox(secondary, fanIn)
+
   // general customizable fan-out
   def fanOut[F[_] <: FanOut[_]](fanOut: FanOut.Provider[F], secondary: Producer[F[A]#O2] ⇒ Unit): Res[F[A]#O1] =
     this ~> FanOutBox(fanOut, secondary)
@@ -111,7 +115,7 @@ trait OperationApi1[A] extends Any {
     }
 
   // merges the values produced by the given flow into the consumed stream
-  def merge[BB >: A](producer: Producer[BB]): Res[BB] = this ~> Merge(producer)
+  def merge[B >: A](producer: Producer[B]): Res[B] = fanIn[B, FanIn.Merge](producer, FanIn.Merge)
 
   // repeats each element coming in from upstream `factor` times
   def multiply(factor: Int): Res[A] = this ~> Multiply[A](factor)
@@ -177,7 +181,7 @@ trait OperationApi1[A] extends Any {
 
   // combines the upstream and the given flow into tuples
   // produces at the rate of the slower upstream (i.e. no values are dropped)
-  def zip[B](producer: Producer[B]): Res[(A, B)] = this ~> Zip(producer)
+  def zip[B](producer: Producer[B]): Res[(A, B)] = fanIn[B, FanIn.Zip](producer, FanIn.Zip)
 }
 
 object OperationApi1 {

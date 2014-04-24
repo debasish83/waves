@@ -55,6 +55,9 @@ object Operation {
 
   final case class Drop[T](n: Int) extends (T ==> T)
 
+  final case class FanInBox[A, B, F[_, _] <: FanIn[_, _]](secondary: Producer[B], fanIn: FanIn.Provider[F])
+    extends (A ==> F[A, B]#O)
+
   final case class FanOutBox[I, F[_] <: FanOut[_]](fanOut: FanOut.Provider[F], secondary: Producer[F[I]#O2] ⇒ Unit)
     extends (I ==> F[I]#O1)
 
@@ -73,8 +76,6 @@ object Operation {
   }
 
   final case class Map[A, B](f: A ⇒ B) extends (A ==> B)
-
-  final case class Merge[T](producer: Producer[T]) extends (T ==> T)
 
   final case class Multiply[T](factor: Int) extends (T ==> T)
 
@@ -114,6 +115,4 @@ object Operation {
     def onComplete: immutable.Seq[B] = Nil
     def cleanup(): Unit = ()
   }
-
-  final case class Zip[A, B, C](producer: Producer[C]) extends (A ==> (B, C))
 }
