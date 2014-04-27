@@ -35,7 +35,7 @@ class TransformSpec extends OperationImplSpec with MultiplyTests {
       multiply5Tests {
         Operation.Transform {
           new Operation.Transformer[Char, Char] {
-            def onNext(c: Char) = immutable.Seq.fill(5)(c)
+            def onNext(c: Char) = Seq.fill(5)(c)
           }
         }
       }
@@ -122,7 +122,6 @@ class TransformSpec extends OperationImplSpec with MultiplyTests {
         expectRequestMore(1)
         onComplete()
         expectError(TestException)
-        expectCancel()
       }
     }
   }

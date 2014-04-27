@@ -2,7 +2,6 @@ package akka.stream2.impl
 package ops
 
 import org.reactivestreams.api.Producer
-import OperationImpl.Terminated
 import OperationProcessor.SubDownstreamHandling
 
 class Concat(next: () ⇒ Producer[Any])(implicit val upstream: Upstream, val downstream: Downstream,
@@ -28,38 +27,25 @@ class Concat(next: () ⇒ Producer[Any])(implicit val upstream: Upstream, val do
 
   class WaitingForSecondFlowSubscription(var requested: Int) extends BehaviorWithSubDownstreamHandling {
     var cancelled = false
-    override def requestMore(elements: Int): Unit = requested += elements
-    override def cancel(): Unit = cancelled = true
-    override def subOnSubscribe(upstream2: Upstream): Unit =
+    override def requestMore(elements: Int) = requested += elements
+    override def cancel() = cancelled = true
+    override def subOnSubscribe(upstream2: Upstream) =
       if (cancelled) {
-        become(Terminated)
         upstream2.cancel()
       } else {
         become(new Draining(upstream2))
         upstream2.requestMore(requested)
       }
-    override def subOnComplete(): Unit = {
-      become(Terminated)
-      if (!cancelled) downstream.onComplete()
-    }
-    override def subOnError(cause: Throwable) = {
-      become(Terminated)
-      if (!cancelled) downstream.onError(cause)
-    }
+    override def subOnComplete() = downstream.onComplete()
+    override def subOnError(cause: Throwable) = downstream.onError(cause)
   }
 
   // when we enter this state we have already requested all so far requested elements from upstream2
   class Draining(upstream2: Upstream) extends BehaviorWithSubDownstreamHandling {
-    override def requestMore(elements: Int): Unit = upstream2.requestMore(elements)
-    override def cancel(): Unit = upstream2.cancel()
-    override def subOnNext(element: Any): Unit = downstream.onNext(element)
-    override def subOnComplete(): Unit = {
-      become(Terminated)
-      downstream.onComplete()
-    }
-    override def subOnError(cause: Throwable): Unit = {
-      become(Terminated)
-      downstream.onError(cause)
-    }
+    override def requestMore(elements: Int) = upstream2.requestMore(elements)
+    override def cancel() = upstream2.cancel()
+    override def subOnNext(element: Any) = downstream.onNext(element)
+    override def subOnComplete() = downstream.onComplete()
+    override def subOnError(cause: Throwable) = downstream.onError(cause)
   }
 }

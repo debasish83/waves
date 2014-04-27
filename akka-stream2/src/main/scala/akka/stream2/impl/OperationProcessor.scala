@@ -1,24 +1,23 @@
 package akka.stream2
 package impl
 
-import akka.actor.{ ActorRefFactory, PoisonPill, Props }
+import java.util.concurrent.atomic.AtomicReference
+import akka.actor.{ ActorRefFactory, Props }
 import org.reactivestreams.api.{ Consumer, Producer, Processor }
 import org.reactivestreams.spi
 import spi.{ Publisher, Subscription, Subscriber }
 
 // Processor interface around an `OperationProcessor.Actor`
-class OperationProcessor[I, O](op: Operation[I, O],
-                               initialFanOutBufferSize: Int = 1,
-                               maxFanOutBufferSize: Int = 16)(implicit refFactory: ActorRefFactory)
+class OperationProcessor[I, O](op: Operation[I, O])(implicit refFactory: ActorRefFactory)
   extends Processor[I, O] {
   import OperationProcessor._
 
   private val actor =
-    refFactory.actorOf(Props(new OperationProcessor.Actor(op, initialFanOutBufferSize, maxFanOutBufferSize)))
+    refFactory.actorOf(Props(new OperationProcessor.Actor(op)))
 
   val getSubscriber: Subscriber[I] =
     new Subscriber[I] {
-      def onSubscribe(subscription: Subscription): Unit = actor ! OnSubscribed(subscription)
+      def onSubscribe(subscription: Subscription): Unit = actor ! OnSubscribe(subscription)
       def onNext(element: I): Unit = actor ! OnNext(element)
       def onComplete(): Unit = actor ! OnComplete
       def onError(cause: Throwable): Unit = actor ! OnError(cause)
@@ -34,15 +33,15 @@ class OperationProcessor[I, O](op: Operation[I, O],
 
 object OperationProcessor {
   // Subscriber-side messages
-  case class OnSubscribed(subscription: Subscription)
+  case class OnSubscribe(subscription: Subscription)
   case class OnNext(element: Any) // TODO: remove this model and make it the default match
   case object OnComplete
   case class OnError(cause: Throwable)
 
   // Publisher-side messages
   case class Subscribe(subscriber: Subscriber[Any])
-  case class MoreRequested(subscription: Subscription, elements: Int)
-  case class UnregisterSubscription(subscription: Subscription)
+  case class RequestMore(elements: Int)
+  case object Cancel
 
   // other messages
   case class Job(thunk: () ⇒ Unit)
@@ -65,47 +64,55 @@ object OperationProcessor {
   }
 
   // Actor providing execution logic around an `OperationChain`
-  class Actor(op: OperationX, initialFanOutBufferSize: Int, maxFanOutBufferSize: Int)
-    extends AbstractProducer[Any](initialFanOutBufferSize, maxFanOutBufferSize)
-    with akka.actor.Actor with Downstream with Context {
-
-    @volatile var isShutdown = false
-    var _chain: Option[OperationChain] = None
-    def chain: OperationChain = _chain.getOrElse(sys.error("Upstream not yet connected"))
+  class Actor(op: OperationX) extends akka.actor.Actor with Downstream with Subscription with Context {
 
     def receive: Receive = {
-      // Subscriber side
-      case OnNext(element)                       ⇒ chain.onNext(element)
-      case OnComplete                            ⇒ chain.onComplete()
-      case OnError(e)                            ⇒ chain.onError(e)
-      case OnSubscribed(subscription)            ⇒ _chain = Some(new OperationChain(op, subscription, this, this))
-
-      // Publisher side
-      case Subscribe(subscriber)                 ⇒ subscribe(subscriber)
-      case MoreRequested(subscription, elements) ⇒ super.moreRequested(subscription.asInstanceOf[Subscription], elements)
-      case UnregisterSubscription(subscription)  ⇒ super.unregisterSubscription(subscription.asInstanceOf[Subscription])
-
-      // other
-      case Job(thunk)                            ⇒ thunk()
+      case OnSubscribe(subscription) ⇒ context.become(waitingForDownstreamConnection(operationChain(subscription)))
+      case Subscribe(subscriber)     ⇒ context.become(waitingForUpstreamConnection(subscriber))
     }
 
-    def requestFromUpstream(elements: Int): Unit = chain.requestMore(elements)
-    def cancelUpstream(): Unit = chain.cancel()
-    def shutdown(): Unit = {
-      isShutdown = true
-      self ! PoisonPill // we don't `context.stop(self)` here in order to prevent dead letters
+    def waitingForDownstreamConnection(chain: OperationChain): Receive = {
+      case Subscribe(subscriber) ⇒ context.become(running(chain, subscriber))
     }
 
-    // `Downstream` interface
-    def onNext(element: Any): Unit = pushToDownstream(element)
-    def onComplete(): Unit = completeDownstream()
-    def onError(cause: Throwable): Unit = abortDownstream(cause)
+    def waitingForUpstreamConnection(subscriber: Subscriber[Any]): Receive = {
+      case OnSubscribe(subscription)  ⇒ context.become(running(operationChain(subscription), subscriber))
+      case Subscribe(otherSubscriber) ⇒ reject(otherSubscriber)
+    }
 
-    // these two methods are directly called from a Subscriber thread, therefore we need to "move" them into the actor
-    override def moreRequested(subscription: Subscription, elements: Int) =
-      if (!isShutdown) self ! MoreRequested(subscription, elements)
-    override def unregisterSubscription(subscription: Subscription) =
-      if (!isShutdown) self ! UnregisterSubscription(subscription)
+    def running(chain: OperationChain, subscriber: Subscriber[Any]): Receive = {
+      subscriber.onSubscribe(this);
+      {
+        // Subscriber side
+        case OnNext(element)            ⇒ chain.leftDownstream.onNext(element)
+        case OnComplete                 ⇒ stopAfter(chain.leftDownstream.onComplete())
+        case OnError(e)                 ⇒ stopAfter(chain.leftDownstream.onError(e))
+
+        // Publisher side
+        case RequestMore(elements)      ⇒ chain.rightUpstream.requestMore(elements)
+        case Cancel                     ⇒ stopAfter(chain.rightUpstream.cancel())
+        case Subscribe(otherSubscriber) ⇒ reject(otherSubscriber)
+
+        // other
+        case Job(thunk)                 ⇒ thunk()
+      }
+    }
+
+    def operationChain(subscription: Subscription) = new OperationChain(op, subscription, this, this)
+
+    def reject(subscriber: Subscriber[Any]): Unit =
+      subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
+
+    def stopAfter(unit: Unit): Unit = context.stop(self)
+
+    // outside upstream interface facing downstream, called from another thread
+    def requestMore(elements: Int) = self ! RequestMore(elements)
+    def cancel() = self ! Cancel
+
+    // outside downstream interface facing upstream, called from another thread
+    def onNext(element: Any) = self ! OnNext(element)
+    def onComplete() = self ! OnComplete
+    def onError(cause: Throwable) = self ! OnError(cause)
 
     // Context interface
     def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit =
@@ -118,21 +125,18 @@ object OperationProcessor {
         }
       }
     def requestSubDownstream(subUpstream: ⇒ SubUpstreamHandling): Producer[Any] with Downstream =
-      new AbstractProducer[Any](initialFanOutBufferSize, maxFanOutBufferSize) with Downstream { // TODO: add buffer config facility
-        def requestFromUpstream(elements: Int) = subUpstream.subRequestMore(elements)
-        def cancelUpstream() = subUpstream.subCancel()
-        def shutdown() = () // nothing to do
+      new AtomicReference[Subscriber[Any]] with AbstractProducer[Any] with Subscription with Downstream {
+        def subscribe(subscriber: Subscriber[Any]): Unit =
+          if (compareAndSet(null, subscriber)) subscriber.onSubscribe(this)
+          else subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
 
-        // these two methods are directly called from a Subscriber thread, therefore we need to "move" them into the actor
-        override def moreRequested(subscription: Subscription, elements: Int): Unit =
-          schedule(super.moreRequested(subscription, elements))
-        override def unregisterSubscription(subscription: Subscription) =
-          schedule(super.unregisterSubscription(subscription))
+        def onNext(element: Any) = get.onNext(element)
+        def onComplete() = get.onComplete()
+        def onError(cause: Throwable) = get.onError(cause)
 
-        // `Downstream` interface
-        def onNext(element: Any): Unit = pushToDownstream(element)
-        def onComplete(): Unit = completeDownstream()
-        def onError(cause: Throwable): Unit = abortDownstream(cause)
+        // outside upstream interface facing downstream, called from another thread
+        def requestMore(elements: Int) = schedule(subUpstream.subRequestMore(elements))
+        def cancel() = schedule(subUpstream.subCancel())
       }
 
     // helpers

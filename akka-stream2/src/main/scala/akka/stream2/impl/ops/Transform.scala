@@ -3,8 +3,6 @@ package impl
 package ops
 
 import scala.annotation.tailrec
-import scala.collection.immutable
-import OperationImpl.Terminated
 import Operation.Transformer
 
 class Transform(transformer: Transformer[Any, Any])(implicit val upstream: Upstream, val downstream: Downstream)
@@ -29,7 +27,7 @@ class Transform(transformer: Transformer[Any, Any])(implicit val upstream: Upstr
               upstream.cancel()
               return
           }
-        deliver(output, this)
+        deliver(output.toList, this)
       }
 
       override def onComplete(): Unit = {
@@ -38,10 +36,9 @@ class Transform(transformer: Transformer[Any, Any])(implicit val upstream: Upstr
           catch {
             case t: Throwable ⇒
               onError(t)
-              upstream.cancel()
               return
           }
-        deliver(output, complete)
+        deliver(output.toList, complete)
       }
 
       override def onError(cause: Throwable) = completeWithError(cause)
@@ -66,7 +63,7 @@ class Transform(transformer: Transformer[Any, Any])(implicit val upstream: Upstr
       }
     }
 
-  class OutputPending(remaining: immutable.Seq[Any], var whenRemainingOutputIsDone: () ⇒ Unit) extends Behavior {
+  class OutputPending(remaining: List[Any], var whenRemainingOutputIsDone: () ⇒ Unit) extends Behavior {
     override def requestMore(elements: Int) = {
       requested += elements
       if (requested == elements) deliver(remaining, whenRemainingOutputIsDone)
@@ -75,7 +72,7 @@ class Transform(transformer: Transformer[Any, Any])(implicit val upstream: Upstr
     override def onError(cause: Throwable) = completeWithError(cause)
   }
 
-  @tailrec final def deliver(output: immutable.Seq[Any], whenRemainingOutputIsDone: () ⇒ Unit): Unit =
+  @tailrec final def deliver(output: List[Any], whenRemainingOutputIsDone: () ⇒ Unit): Unit =
     if (output.nonEmpty) {
       if (requested > 0) {
         downstream.onNext(output.head) // might re-enter into `requestMore` or `cancel`
@@ -85,13 +82,11 @@ class Transform(transformer: Transformer[Any, Any])(implicit val upstream: Upstr
     } else whenRemainingOutputIsDone()
 
   def complete(): Unit = {
-    become(Terminated)
     downstream.onComplete()
     transformer.cleanup()
   }
 
   def completeWithError(cause: Throwable): Unit = {
-    become(Terminated)
     downstream.onError(cause)
     transformer.cleanup()
   }

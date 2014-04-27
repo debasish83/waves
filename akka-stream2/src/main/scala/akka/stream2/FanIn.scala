@@ -40,6 +40,25 @@ object FanIn {
     def secondaryOnError(cause: Throwable): Unit = ???
   }
 
+  object MergeToEither extends Provider[Any, Any, Either[Any, Any]] {
+    def apply[A, B](): Provider[A, B, Either[A, B]] = this.asInstanceOf[Provider[A, B, Either[A, B]]]
+    def apply(primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream): MergeToEither[Any, Any] =
+      new MergeToEither(primaryUpstream, secondaryUpstream, downstream)
+  }
+
+  class MergeToEither[A, B](primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream) extends FanIn[A, B, Either[A, B]] {
+    def requestMore(elements: Int): Unit = ???
+    def cancel(): Unit = ???
+
+    def primaryOnNext(element: A): Unit = ???
+    def primaryOnComplete(): Unit = ???
+    def primaryOnError(cause: Throwable): Unit = ???
+
+    def secondaryOnNext(element: B): Unit = ???
+    def secondaryOnComplete(): Unit = ???
+    def secondaryOnError(cause: Throwable): Unit = ???
+  }
+
   object Zip extends Provider[Any, Any, (Any, Any)] {
     def apply[A, B](): Provider[A, B, (A, B)] = this.asInstanceOf[Provider[A, B, (A, B)]]
     def apply(primaryUpstream: Upstream, secondaryUpstream: Upstream, downstream: Downstream): Zip[Any, Any] =

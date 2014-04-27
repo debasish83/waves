@@ -6,64 +6,96 @@ import Operation._
 // provides outside interfaces around a chain of OperationImpls
 class OperationChain(op: OperationX,
                      outerUpstream: Upstream, outerDownstream: Downstream, ctx: OperationProcessor.Context) {
+  import OperationChain._
 
-  private[this] var finished = false
+  // the Upstream interface of the right-most OperationImpl
+  private[this] val _rightUpstream = new UpstreamJoint
 
-  // the Upstream side of the right-most OperationImpl
-  private[this] var rightUpstream: Upstream = _
-
-  // wrapper around the `outerDownstream`, required because we need to get notified of completion
-  private[this] val rightDownstream: Downstream =
-    new Downstream {
-      def onNext(element: Any): Unit = outerDownstream.onNext(element)
-      def onComplete(): Unit = {
-        finished = true
-        outerDownstream.onComplete()
-      }
-      def onError(cause: Throwable): Unit = {
-        finished = true
-        outerDownstream.onError(cause)
-      }
-    }
+  // our Downstream connection to the outside
+  private[this] val _rightDownstream = new DownstreamJoint
+  _rightDownstream.arm(outerDownstream)
 
   // our Upstream connection to the outside
-  private[this] def leftUpstream = outerUpstream
+  private[this] val _leftUpstream = new UpstreamJoint
+  _leftUpstream.arm(outerUpstream)
 
-  // the Downstream side of the left-most OperationImpl
-  private[this] var leftDownstream: Downstream = _
+  // the Downstream interface of the left-most OperationImpl
+  private[this] val _leftDownstream = new DownstreamJoint
+
+  _rightUpstream.link(_rightDownstream)
+  _rightDownstream.link(_rightUpstream)
+  _leftUpstream.link(_leftDownstream)
+  _leftDownstream.link(_leftUpstream)
 
   // here we convert the model Operation into a double-linked chain of OperationImpls,
-  // the left-to-right direction (going downstream) is directly wired up,
-  // the right-to-left direction (going upstream) has `UpstreamJoint` instances inserted between the ops
-  convertToImplAndWireUp(op, leftUpstream, rightDownstream)
-  private def convertToImplAndWireUp(op: OperationX, us: Upstream, ds: Downstream): Unit =
+  // in the left-to-right direction (going downstream) the ops are separated by DownstreamJoints
+  // in the right-to-left direction (going upstream) the ops are separated by UpstreamJoints
+  convertToImplAndWireUp(op, _leftUpstream, _leftDownstream, _rightDownstream, _rightUpstream)
+  private def convertToImplAndWireUp(op: OperationX, us: Upstream, leftDownstreamJoint: DownstreamJoint,
+                                     ds: Downstream, rightUpstreamJoint: UpstreamJoint): Unit =
     op match {
       case head ~> tail ⇒
-        val joint = new UpstreamJoint
-        convertToImplAndWireUp(tail, joint, ds)
-        val tailRightUpstream = rightUpstream
-        convertToImplAndWireUp(head, us, leftDownstream)
-        joint.upstream = rightUpstream
-        rightUpstream = tailRightUpstream
+        val usj = new UpstreamJoint
+        val dsj = new DownstreamJoint
+        usj.link(dsj)
+        dsj.link(usj)
+        convertToImplAndWireUp(head, us, leftDownstreamJoint, dsj, usj)
+        convertToImplAndWireUp(tail, usj, dsj, ds, rightUpstreamJoint)
       case _ ⇒
         val opImpl = OperationImpl(op)(us, ds, ctx)
-        leftDownstream = opImpl
-        rightUpstream = opImpl
+        leftDownstreamJoint.arm(opImpl)
+        rightUpstreamJoint.arm(opImpl)
     }
 
-  // the upstream interface we present to the outside
-  def cancel(): Unit = rightUpstream.cancel()
-  def requestMore(elements: Int): Unit =
-    if (!finished && elements > 0) rightUpstream.requestMore(elements)
+  def leftDownstream: Downstream = _leftDownstream
+  def rightUpstream: Upstream = _rightUpstream
+}
 
-  // the downstream interface we present to the outside
-  def onNext(element: Any): Unit = leftDownstream.onNext(element)
-  def onComplete(): Unit = leftDownstream.onComplete()
-  def onError(cause: Throwable): Unit = leftDownstream.onError(cause)
-
+object OperationChain {
+  private val BlackHoleUpstream = new Upstream {
+    def requestMore(elements: Int) = ()
+    def cancel() = ()
+  }
   class UpstreamJoint extends Upstream {
-    var upstream: Upstream = _
-    def requestMore(elements: Int): Unit = upstream.requestMore(elements)
-    def cancel(): Unit = upstream.cancel()
+    private[this] var upstream: Upstream = _
+    private[this] var dsj: DownstreamJoint = _
+    def link(dsj: DownstreamJoint) = this.dsj = dsj
+    def arm(up: Upstream) = upstream = up
+    def disarm() = upstream = BlackHoleUpstream
+    def isDisarmed = upstream eq BlackHoleUpstream
+    def requestMore(elements: Int) = upstream.requestMore(elements)
+    def cancel() = {
+      val up = upstream
+      disarm()
+      dsj.disarm()
+      up.cancel()
+    }
+  }
+
+  private val BlackHoleDownstream = new Downstream {
+    def onNext(element: Any) = ()
+    def onComplete() = ()
+    def onError(cause: Throwable) = ()
+  }
+  class DownstreamJoint extends Downstream {
+    private[this] var downstream: Downstream = _
+    private[this] var usj: UpstreamJoint = _
+    def link(usj: UpstreamJoint) = this.usj = usj
+    def arm(down: Downstream) = downstream = down
+    def disarm() = downstream = BlackHoleDownstream
+    def isDisarmed = downstream eq BlackHoleDownstream
+    def onNext(element: Any) = downstream.onNext(element)
+    def onComplete() = {
+      val down = downstream
+      disarm()
+      usj.disarm()
+      down.onComplete()
+    }
+    def onError(cause: Throwable) = {
+      val down = downstream
+      disarm()
+      usj.disarm()
+      down.onError(cause)
+    }
   }
 }

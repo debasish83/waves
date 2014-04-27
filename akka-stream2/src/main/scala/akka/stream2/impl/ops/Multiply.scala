@@ -2,7 +2,6 @@ package akka.stream2.impl
 package ops
 
 import scala.annotation.tailrec
-import OperationImpl.Terminated
 
 class Multiply(factor: Int)(implicit val upstream: Upstream, val downstream: Downstream)
   extends OperationImpl.Stateful {
@@ -53,7 +52,6 @@ class Multiply(factor: Int)(implicit val upstream: Upstream, val downstream: Dow
             produce()
           } // else break loop and wait for next requestMore
         } else if (upstreamCompleted) {
-          become(Terminated)
           downstream.onComplete()
         } else {
           become(waitingForNextElement)

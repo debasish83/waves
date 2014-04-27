@@ -2,7 +2,6 @@ package akka.stream2.impl
 package ops
 
 import org.reactivestreams.api.Producer
-import OperationImpl.Terminated
 import OperationProcessor.SubDownstreamHandling
 
 class ConcatAll(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
@@ -30,31 +29,26 @@ class ConcatAll(implicit val upstream: Upstream, val downstream: Downstream, ctx
   class WaitingForSubstreamSubscription extends BehaviorWithSubDownstreamHandling {
     var cancelled = false
     var error: Option[Throwable] = None
-    override def requestMore(elements: Int): Unit = requested += elements
-    override def cancel(): Unit = {
+    override def requestMore(elements: Int) = requested += elements
+    override def cancel() = {
       upstream.cancel()
       cancelled = true
     }
-    override def onComplete(): Unit = upstreamCompleted = true
-    override def onError(cause: Throwable): Unit = error = Some(cause)
+    override def onComplete() = upstreamCompleted = true
+    override def onError(cause: Throwable) = error = Some(cause)
 
-    override def subOnSubscribe(subUpstream: Upstream): Unit =
+    override def subOnSubscribe(subUpstream: Upstream) =
       if (cancelled) {
-        become(Terminated)
         subUpstream.cancel()
       } else {
         become(new Draining(subUpstream, error))
         subUpstream.requestMore(requested)
       }
-    override def subOnComplete(): Unit =
-      if (!cancelled) finishSubstream(error)
+    override def subOnComplete() = finishSubstream(error)
     // else if we were cancelled while waiting for the subscription and the sub stream is empty we are done
     override def subOnError(cause: Throwable) = {
-      become(Terminated)
-      if (!cancelled) {
-        downstream.onError(cause)
-        upstream.cancel()
-      }
+      downstream.onError(cause)
+      upstream.cancel()
     }
   }
 
@@ -77,7 +71,6 @@ class ConcatAll(implicit val upstream: Upstream, val downstream: Downstream, ctx
     }
     override def subOnComplete(): Unit = finishSubstream(error)
     override def subOnError(cause: Throwable): Unit = {
-      become(Terminated)
       upstream.cancel()
       downstream.onError(cause)
     }
@@ -85,10 +78,8 @@ class ConcatAll(implicit val upstream: Upstream, val downstream: Downstream, ctx
 
   def finishSubstream(error: Option[Throwable]): Unit = {
     if (upstreamCompleted) {
-      become(Terminated)
       downstream.onComplete()
     } else if (error.isDefined) {
-      become(Terminated)
       downstream.onError(error.get)
     } else {
       become(startBehavior)

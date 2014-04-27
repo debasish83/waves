@@ -7,7 +7,7 @@ import OperationProcessor.{ SubUpstreamHandling, SubDownstreamHandling }
 trait OperationImpl extends Downstream with Upstream
 
 object OperationImpl {
-  // base class with default implementations that simply forward through the chain
+  // base class with default implementations that simply forward through the chain,
   // is allowed to synchronously call its upstream and/or downstream peers with one exception:
   // in a call to `downstream.onNext` the `requestMore` method MUST NOT re-enter into `downstream.onNext`
   // (but somehow collect the request element count for later evaluation)
@@ -28,7 +28,6 @@ object OperationImpl {
     def initialBehavior: OperationImpl // cannot be implemented with a val due to initialization order!
     var behavior: OperationImpl = initialBehavior
     def become(next: OperationImpl): Unit = behavior = next
-    def become(next: Terminated.type): Unit = behavior = next.asInstanceOf[OperationImpl]
 
     def onNext(element: Any) = behavior.onNext(element)
     def onComplete() = behavior.onComplete()
@@ -55,22 +54,6 @@ object OperationImpl {
     }
   }
 
-  // terminal behavior making it easier to detect bugs in other operation impls that do not correctly adhere to
-  // the communication protocol, could potentially be removed after operation impls have stabilized
-  object Terminated extends OperationImpl with SubUpstreamHandling with SubDownstreamHandling {
-    def onNext(element: Any) = throw new IllegalStateException(s"`onNext($element)` called after termination")
-    def onComplete() = throw new IllegalStateException("`onComplete()` called after termination")
-    def onError(cause: Throwable) = throw new IllegalStateException(s"`onError($cause)` called after termination")
-    def requestMore(elements: Int) = throw new IllegalStateException(s"`requestMore($elements)` called after termination")
-    def cancel() = throw new IllegalStateException("`cancel()` called after termination")
-    def subOnSubscribe(subUpstream: Upstream): Unit = throw new IllegalStateException(s"`subOnSubscribe($subUpstream)` called after termination")
-    def subOnNext(element: Any) = throw new IllegalStateException(s"`subOnNext($element)` called after termination")
-    def subOnComplete() = throw new IllegalStateException("`subOnComplete()` called after termination")
-    def subOnError(cause: Throwable) = throw new IllegalStateException(s"`subOnError($cause)` called after termination")
-    def subRequestMore(elements: Int) = throw new IllegalStateException(s"`subRequestMore($elements)` called after termination")
-    def subCancel() = throw new IllegalStateException("`subCancel()` called after termination")
-  }
-
   import Operation._
   def apply(op: OperationX)(implicit upstream: Upstream, downstream: Downstream,
                             ctx: OperationProcessor.Context): OperationImpl =
@@ -83,7 +66,9 @@ object OperationImpl {
       case Fold(seed, f)          ⇒ new ops.Fold(seed, f)
       case Map(f)                 ⇒ new ops.Map(f)
       case Multiply(factor)       ⇒ new ops.Multiply(factor)
+      case OnElement(callback)    ⇒ new ops.OnElement(callback)
       case OnTerminate(callback)  ⇒ new ops.OnTerminate(callback)
+      case Recover(f)             ⇒ new ops.Recover(f)
       case Transform(transformer) ⇒ new ops.Transform(transformer)
       case Split(f)               ⇒ new ops.Split(f)
       case Take(n)                ⇒ new ops.Take(n)

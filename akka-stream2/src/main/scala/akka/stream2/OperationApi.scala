@@ -1,7 +1,6 @@
 package akka.stream2
 
 import scala.language.{ higherKinds, implicitConversions }
-import scala.collection.immutable
 import scala.util.{ Failure, Success, Try }
 import org.reactivestreams.api.{ Consumer, Producer }
 import akka.actor.ActorRefFactory
@@ -27,10 +26,10 @@ trait OperationApi1[A] extends Any {
   // filters the stream with a partial function and maps to its results
   def collect[B](pf: PartialFunction[A, B]): Res[B] =
     transform {
-      new Transformer[A, B] with (B ⇒ immutable.Seq[B]) {
-        val pfa: PartialFunction[A, immutable.Seq[B]] = pf andThen this
-        val nil: A ⇒ immutable.Seq[B] = _ ⇒ Nil
-        def apply(b: B): immutable.Seq[B] = b :: Nil
+      new Transformer[A, B] with (B ⇒ Seq[B]) {
+        val pfa: PartialFunction[A, Seq[B]] = pf andThen this
+        val nil: A ⇒ Seq[B] = _ ⇒ Nil
+        def apply(b: B): Seq[B] = b :: Nil
         def onNext(elem: A) = pfa.applyOrElse(elem, nil)
       }
     }
@@ -101,7 +100,7 @@ trait OperationApi1[A] extends Any {
   def map[B](f: A ⇒ B): Res[B] = this ~> Map(f)
 
   // combined map & concat operation
-  def mapConcat[B, CC](f: A ⇒ CC)(implicit ev: CC <:< Producer[B]): Res[B] =
+  def mapConcat[B, P](f: A ⇒ P)(implicit ev: Producable[P, B]): Res[B] =
     this ~> (Map[A, Producer[B]](b ⇒ ev(f(b))) ~> ConcatAll[B]())
 
   // produces the first A returned by f or optionally the given default value
@@ -114,26 +113,31 @@ trait OperationApi1[A] extends Any {
       }
     }
 
-  // merges the values produced by the given flow into the consumed stream
+  // merges the values produced by the given stream into the consumed stream
   def merge[AA >: A](secondary: Producer[_ <: AA]): Res[AA] =
     fanIn(secondary.asInstanceOf[Producer[AA]], FanIn.Merge[A, AA]())
+
+  // merges the values produced by the given stream into the consumed stream
+  def mergeToEither[B](secondary: Producer[B]): Res[Either[A, B]] =
+    fanIn(secondary, FanIn.MergeToEither[A, B]())
 
   // repeats each element coming in from upstream `factor` times
   def multiply(factor: Int): Res[A] = this ~> Multiply[A](factor)
 
-  // attaches the given callback which "listens" to `onComplete' events
-  // without otherwise affecting the stream
+  // attaches the given callback which "listens" to `onComplete' events without otherwise affecting the stream
   def onComplete[U](callback: ⇒ U): Res[A] =
     onTerminate { errorOption ⇒ if (errorOption.isEmpty) callback }
 
-  // attaches the given callback which "listens" to `onError' events
-  // without otherwise affecting the stream
+  // attaches the given callback which "listens" to `onNext' events without otherwise affecting the stream
+  def onElement(callback: A ⇒ Unit): Res[A] =
+    this ~> OnElement(callback)
+
+  // attaches the given callback which "listens" to `onError' events without otherwise affecting the stream
   def onError[U](callback: Throwable ⇒ U): Res[A] =
     onTerminate { errorOption ⇒ if (errorOption.isDefined) callback(errorOption.get) }
 
-  // attaches the given callback which "listens" to `onComplete' and `onError` events
-  // without otherwise affecting the stream
-  def onTerminate[U](callback: Option[Throwable] ⇒ U): Res[A] =
+  // attaches the given callback which "listens" to `onComplete' and `onError` events without otherwise affecting the stream
+  def onTerminate(callback: Option[Throwable] ⇒ Unit): Res[A] =
     this ~> OnTerminate[A](callback)
 
   // chains in the given operation
@@ -142,8 +146,8 @@ trait OperationApi1[A] extends Any {
   // transforms the underlying stream itself (not its elements) with the given function
   def outerMap[B](f: Producer[A] ⇒ Producer[B]): Res[B] = this ~> OuterMap(f)
 
-  // lifts errors from upstream back into the main data flow
-  def recover[B <: A](f: Throwable ⇒ immutable.Seq[B]): Res[B] = this ~> Recover(f)
+  // lifts errors from upstream back into the main data flow before completing normally
+  def recover[B <: A](f: Throwable ⇒ Seq[B]): Res[B] = this ~> Recover(f)
 
   // general stream transformation
   def transform[B](transformer: Transformer[A, B]): Res[B] =

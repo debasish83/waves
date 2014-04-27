@@ -1,11 +1,9 @@
 package org.reactivestreams.tck // TODO: move back out of this package once the visibility problems have been fixed
 
-import scala.collection.immutable.VectorBuilder
-import scala.annotation.tailrec
 import org.reactivestreams.api.Producer
-import org.reactivestreams.spi.Publisher
 import org.scalatest.matchers.Matcher
-import akka.stream2.impl.OperationProcessor
+import scala.concurrent.duration._
+import scala.concurrent.Await
 import akka.actor.ActorSystem
 import akka.stream2._
 import org.scalatest._
@@ -59,31 +57,9 @@ class ExamplesSpec(override val system: ActorSystem) extends TestEnvironment(Tim
   ///////////////////////////////////////////////////////////
 
   def flow[T](first: T, more: T*): Flow[T] = flow(first +: more)
-  def flow[T](iterable: Iterable[T]): Flow[T] = IteratorProducer(iterable)
+  def flow[T](iterable: Iterable[T]): Flow[T] = Flow(iterable)
 
   def produce[T](first: T, more: T*): Matcher[Flow[T]] = produce(first +: more)
   def produce[T](expected: Seq[T]) =
-    equal(expected).matcher[Seq[T]] compose { flow: Flow[T] ⇒
-      val Flow.Mapped(prod, op) = flow
-      val processor = new OperationProcessor(op)
-      prod.getPublisher.subscribe(processor.getSubscriber)
-      drain(processor.getPublisher)
-    }
-
-  def drain[T](pub: Publisher[T]): Seq[T] = {
-    val sub = newManualSubscriber(pub)
-    val builder = new VectorBuilder[T]
-    @tailrec def pull(): Seq[T] = {
-      sub.requestMore(1)
-      val element = sub.nextElementOrEndOfStream(100) // TODO: remove timeout param
-      if (element.isDefined) {
-        builder += element.get
-        pull()
-      } else {
-        verifyNoAsyncErrors()
-        builder.result()
-      }
-    }
-    pull()
-  }
+    equal(expected).matcher[Seq[T]] compose { flow: Flow[T] ⇒ Await.result(flow.drainToSeq, 100.millis) }
 }

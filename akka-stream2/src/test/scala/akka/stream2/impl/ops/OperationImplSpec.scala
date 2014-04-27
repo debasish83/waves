@@ -66,12 +66,12 @@ abstract class OperationImplSpec extends FreeSpec with Matchers {
       if (requestSubUpstreamCalls.nonEmpty)
         fail("Unexpected calls: " + callsToString("requestSubUpstream", requestSubUpstreamCalls.map(_._1)))
 
-    def requestMore(counts: Int*): Unit = counts.foreach(chain.requestMore)
-    def cancel(): Unit = chain.cancel()
+    def requestMore(counts: Int*): Unit = counts.foreach(chain.rightUpstream.requestMore)
+    def cancel(): Unit = chain.rightUpstream.cancel()
 
-    def onNext(elements: Any*): Unit = elements.foreach(chain.onNext)
-    def onComplete(): Unit = chain.onComplete()
-    def onError(cause: Throwable): Unit = chain.onError(cause)
+    def onNext(elements: Any*): Unit = elements.foreach(chain.leftDownstream.onNext)
+    def onComplete(): Unit = chain.leftDownstream.onComplete()
+    def onError(cause: Throwable): Unit = chain.leftDownstream.onError(cause)
   }
 
   class SubDownstreamInterface(sdh: () ⇒ SubDownstreamHandling) extends MockUpstream {

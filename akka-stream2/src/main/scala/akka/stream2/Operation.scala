@@ -1,6 +1,7 @@
 package akka.stream2
 
 import scala.language.{ higherKinds, implicitConversions }
+import scala.concurrent.ExecutionContext
 import org.reactivestreams.api.{ Producer, Consumer, Processor }
 import akka.actor.ActorRefFactory
 import akka.stream2.impl.OperationProcessor
@@ -25,14 +26,20 @@ object Operation {
 
   implicit class Api1[A, B](val op: A ==> B) extends OperationApi1[B] {
     type Res[C] = A ==> C
+
     def ~>[C](next: B ==> C): Res[C] = op ~> next
+
     def toProcessor(implicit refFactory: ActorRefFactory): Processor[A, B] =
       new OperationProcessor(op) // TODO: introduce implicit settings allowing for buffer size config
+
     def produceTo(consumer: Consumer[B])(implicit refFactory: ActorRefFactory): Consumer[A] = {
       val processor = toProcessor
       processor.produceTo(consumer)
       processor
     }
+
+    def drain(callback: B ⇒ Unit)(implicit refFactory: ActorRefFactory, ec: ExecutionContext): Consumer[A] =
+      onElement(callback) produceTo StreamConsumer.blackHole[B]
   }
 
   implicit class Api2[A, B](val op: A ==> Producer[B]) extends OperationApi2[B] {
@@ -79,11 +86,13 @@ object Operation {
 
   final case class Multiply[T](factor: Int) extends (T ==> T)
 
-  final case class OnTerminate[T](callback: Option[Throwable] ⇒ Any) extends (T ==> T)
+  final case class OnElement[T](callback: T ⇒ Unit) extends (T ==> T)
+
+  final case class OnTerminate[T](callback: Option[Throwable] ⇒ Unit) extends (T ==> T)
 
   final case class OuterMap[A, B](f: Producer[A] ⇒ Producer[B]) extends (A ==> B)
 
-  final case class Recover[A, B <: A](f: Throwable ⇒ immutable.Seq[B]) extends (A ==> B)
+  final case class Recover[A, B <: A](f: Throwable ⇒ Seq[B]) extends (A ==> B)
 
   final case class Split[T](f: T ⇒ Split.Command) extends (T ==> Producer[T])
   object Split {
@@ -110,7 +119,7 @@ object Operation {
    *    the upstream is cancelled (if the error is an exception thrown by a method) and `cleanup` is called.
    */
   trait Transformer[-A, +B] {
-    def onNext(elem: A): immutable.Seq[B]
+    def onNext(elem: A): Seq[B]
     def isComplete: Boolean = false
     def onComplete: immutable.Seq[B] = Nil
     def cleanup(): Unit = ()

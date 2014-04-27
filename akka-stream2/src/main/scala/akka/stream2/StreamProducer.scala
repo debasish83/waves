@@ -4,43 +4,51 @@
 
 package akka.stream2
 
+import java.util.concurrent.atomic.AtomicReference
 import scala.annotation.tailrec
 import scala.util.control.NonFatal
-import org.reactivestreams.api.{ Consumer, Producer }
-import org.reactivestreams.spi.{ Subscription, Subscriber, Publisher }
-import java.util.concurrent.atomic.AtomicReference
+import scala.concurrent.{ ExecutionContext, Future }
+import org.reactivestreams.spi.{ Subscription, Subscriber }
+import org.reactivestreams.api.Producer
+import scala.util.{ Failure, Success, Try }
 
 object StreamProducer {
 
-  // since there is nothing implementation-specific to the empty producer
-  // shouldn't we make it available as a static method right on `org.reactivestreams.api.Producer`?
+  // a producer that always completes the subscriber directly in `subscribe`
   def empty[T]: Producer[T] = EmptyProducer.asInstanceOf[Producer[T]]
 
-  private object EmptyProducer extends Producer[Nothing] with Publisher[Nothing] {
-    def getPublisher: Publisher[Nothing] = this
-    def produceTo(consumer: Consumer[Nothing]): Unit = subscribe(consumer.getSubscriber)
-    def subscribe(subscriber: Subscriber[Nothing]): Unit = subscriber.onComplete()
+  // case object so we get value equality
+  case object EmptyProducer extends AbstractProducer[Any] {
+    def subscribe(subscriber: Subscriber[Any]) = subscriber.onComplete()
   }
 
-  // since there is nothing implementation-specific to the error producer
-  // shouldn't we make it available as a static method right on `org.reactivestreams.api.Producer`?
-  def apply[T](error: Throwable): Producer[T] = new ErrorProducer(error).asInstanceOf[Producer[T]]
+  // a producer that always calls `subscriber.onError` directly in `subscribe`
+  def error[T](error: Throwable): Producer[T] = new ErrorProducer(error).asInstanceOf[Producer[T]]
 
-  private class ErrorProducer(error: Throwable) extends Producer[Nothing] with Publisher[Nothing] {
-    def getPublisher: Publisher[Nothing] = this
-    def produceTo(consumer: Consumer[Nothing]): Unit = subscribe(consumer.getSubscriber)
-    def subscribe(subscriber: Subscriber[Nothing]): Unit = subscriber.onError(error)
+  // case class so we get value equality
+  case class ErrorProducer(error: Throwable) extends AbstractProducer[Any] {
+    def subscribe(subscriber: Subscriber[Any]) = subscriber.onError(error)
   }
 
   /**
-   * Constructs a Producer which efficiently produces the elements from the given Iterable
-   * synchronously in `subscription.requestMore`.
-   *
-   * CAUTION: This is a convenience wrapper designed for iterables which are static collections.
-   * Do *NOT* use it for iterables on lazy collections or other implementations that do more
-   * than merely retrieve an element in their `next()` method!
+   * Shortcut for constructing an `ForIterable`.
    */
-  def apply[T](iterable: Iterable[T]): Producer[T] = apply(iterable.iterator)
+  def of[T](elements: T*): Producer[T] = apply(elements)
+
+  /**
+   * Shortcut for constructing an `ForIterable`.
+   */
+  def apply[T](iterable: Iterable[T]): Producer[T] = ForIterable(iterable)
+
+  /**
+   * A producer supporting unlimited subscribers which all receive independent subscriptions which
+   * efficiently produce the elements of the given Iterable synchronously in `subscription.requestMore`.
+   * Provides value equality.
+   */
+  case class ForIterable[T](iterable: Iterable[T]) extends AbstractProducer[T] {
+    def subscribe(subscriber: Subscriber[T]) =
+      subscriber.onSubscribe(new IteratorSubscription(iterable.iterator, subscriber))
+  }
 
   /**
    * Constructs a Producer which efficiently produces the elements from the given iterator
@@ -51,58 +59,62 @@ object StreamProducer {
    * than merely retrieve an element in their `next()` method!
    */
   def apply[T](iterator: Iterator[T]): Producer[T] =
-    new IteratorProducer(iterator).asInstanceOf[Producer[T]]
+    new AtomicReference[Subscriber[T]] with AbstractProducer[T] {
+      def subscribe(subscriber: Subscriber[T]) =
+        if (compareAndSet(null, subscriber)) {
+          subscriber.onSubscribe(new IteratorSubscription(iterator, subscriber))
+        } else subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
+    }
 
-  private class IteratorProducer(iterator: Iterator[Any]) extends Producer[Any] with Publisher[Any] {
-    private trait State extends Publisher[Any] with Subscription
-    private[this] val state = new AtomicReference[State](Fresh)
-
-    def getPublisher: Publisher[Any] = this
-    def produceTo(consumer: Consumer[Any]): Unit = subscribe(consumer.getSubscriber)
-    def subscribe(subscriber: Subscriber[Any]): Unit = state.get.subscribe(subscriber)
-
-    private object Fresh extends State {
-      def subscribe(subscriber: Subscriber[Any]): Unit = {
-        val running = new Running(subscriber)
-        if (state.compareAndSet(Fresh, running)) {
-          subscriber.onSubscribe {
-            new Subscription {
-              def requestMore(elements: Int): Unit = state.get.requestMore(elements)
-              def cancel(): Unit = state.get.cancel()
+  private class IteratorSubscription[T](iterator: Iterator[T], subscriber: Subscriber[T]) extends Subscription {
+    @volatile var cancelled = false
+    @tailrec final def requestMore(elements: Int) =
+      if (!cancelled && elements > 0) {
+        val recurse =
+          try {
+            if (iterator.hasNext) {
+              subscriber.onNext(iterator.next())
+              true
+            } else {
+              subscriber.onComplete()
+              false
             }
+          } catch {
+            case NonFatal(e) ⇒
+              subscriber.onError(e)
+              false
           }
-        } else running.subscribe(subscriber)
+        if (recurse) requestMore(elements - 1)
       }
-      def requestMore(elements: Int) = throw new IllegalStateException
-      def cancel() = throw new IllegalStateException
-    }
-    private class Running(subscriber: Subscriber[Any]) extends State {
-      def subscribe(subscriber: Subscriber[Any]): Unit = Closed.subscribe(subscriber)
-      @tailrec final def requestMore(elements: Int) =
-        if (elements > 0) {
-          val recurse =
-            try {
-              if (iterator.hasNext) {
-                subscriber.onNext(iterator.next())
-                true
-              } else {
-                subscriber.onComplete()
-                false
-              }
-            } catch {
-              case NonFatal(e) ⇒
-                subscriber.onError(e)
-                false
-            }
-          if (recurse) requestMore(elements - 1)
-        }
-      def cancel() = state.set(Closed)
-    }
-    private object Closed extends State {
-      def subscribe(subscriber: Subscriber[Any]): Unit =
-        subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
-      def requestMore(elements: Int) = () // we have to ignore here
-      def cancel() = () // we have to ignore here
-    }
+    def cancel() = cancelled = true
   }
+
+  /**
+   * A producer supporting unlimited subscribers which all receive independent subscriptions to
+   * a single element stream producing the value of the given future.
+   * If the future is already completed at the time of the first `subscription.requestMore` the
+   * value is produced synchronously in `subscription.requestMore`.
+   */
+  def apply[T](future: Future[T])(implicit executor: ExecutionContext): Producer[T] =
+    new AbstractProducer[T] {
+      def subscribe(subscriber: Subscriber[T]) =
+        subscriber.onSubscribe {
+          new Subscription {
+            @volatile var cancelled = false
+            def requestMore(elements: Int) =
+              if (!cancelled)
+                if (future.isCompleted) dispatch(future.value.get)
+                else future.onComplete(dispatch)
+            def cancel() = cancelled = true
+            def dispatch(value: Try[T]): Unit =
+              if (!cancelled)
+                value match {
+                  case Success(x) ⇒
+                    subscriber.onNext(x)
+                    subscriber.onComplete()
+                  case Failure(error) ⇒ subscriber.onError(error)
+                }
+          }
+        }
+    }
 }

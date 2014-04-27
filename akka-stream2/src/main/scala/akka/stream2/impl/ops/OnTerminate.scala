@@ -1,16 +1,24 @@
 package akka.stream2.impl
 package ops
 
-class OnTerminate(callback: Option[Throwable] ⇒ Any)(implicit val upstream: Upstream, val downstream: Downstream)
+import scala.util.control.NonFatal
+
+class OnTerminate(callback: Option[Throwable] ⇒ Unit)(implicit val upstream: Upstream, val downstream: Downstream)
   extends OperationImpl.Abstract {
 
-  override def onComplete(): Unit = {
-    callback(None)
-    downstream.onComplete()
-  }
+  override def onComplete(): Unit =
+    try {
+      callback(None)
+      downstream.onComplete()
+    } catch {
+      case NonFatal(e) ⇒ downstream.onError(e)
+    }
 
-  override def onError(cause: Throwable): Unit = {
-    callback(Some(cause))
-    downstream.onError(cause)
-  }
+  override def onError(cause: Throwable): Unit =
+    try {
+      callback(Some(cause))
+      downstream.onError(cause)
+    } catch {
+      case NonFatal(e) ⇒ downstream.onError(e)
+    }
 }

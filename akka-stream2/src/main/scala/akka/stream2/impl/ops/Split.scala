@@ -3,7 +3,6 @@ package impl
 package ops
 
 import OperationProcessor.SubUpstreamHandling
-import OperationImpl.Terminated
 import Operation.Split._
 
 class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream: Downstream,
@@ -98,10 +97,8 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
       substream.onNext(element)
       subRequested -= 1
       if (upstreamCompleted) {
-        become(Terminated)
         substream.onComplete()
       } else if (upstreamError.isDefined) {
-        become(Terminated)
         substream.onError(upstreamError.get)
       } else if (subRequested > 0) upstream.requestMore(1)
     }
@@ -115,19 +112,15 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
     }
     def onNextFirst(element: Any): Unit = {
       substream.onComplete()
-      if (downstreamCancelled) {
-        become(Terminated)
-        upstream.cancel()
-      } else if (mainRequested > 0) startBehavior.onNextFirst(element)
+      if (downstreamCancelled) upstream.cancel()
+      else if (mainRequested > 0) startBehavior.onNextFirst(element)
       else become(new WaitingForRequestMore(element))
     }
     override def onComplete(): Unit = {
-      become(Terminated)
       substream.onComplete()
       downstream.onComplete()
     }
     override def onError(cause: Throwable): Unit = {
-      become(Terminated)
       substream.onError(cause)
       downstream.onError(cause)
     }
@@ -139,7 +132,6 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
 
     private def unbecomeInSubstream(): Unit =
       if (downstreamCancelled) {
-        become(Terminated)
         upstream.cancel()
       } else {
         become(startBehavior)
