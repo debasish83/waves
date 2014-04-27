@@ -10,31 +10,40 @@ import OperationProcessor.{ SubUpstreamHandling, SubDownstreamHandling }
 
 abstract class OperationImplSpec extends FreeSpec with Matchers {
 
-  class Test[A, B](val op: Operation[A, B]) extends MockUpstream with MockDownstream with DelayedInit {
-    def delayedInit(body: ⇒ Unit) = {
-      body
-      expectNoRequestMore()
-      expectNoCancel()
-      expectNoNext()
-      expectNoComplete()
-      expectNoError()
-      expectNoRequestSubUpstream()
-      verifiedForCleanExit foreach {
-        case Left(substream) ⇒
-          substream.expectNoRequestMore()
-          substream.expectNoCancel()
-        case Right(substream) ⇒
-          substream.expectNoNext()
-          substream.expectNoComplete()
-          substream.expectNoError()
-      }
+  def test[A, B](op: Operation[A, B])(body: Fixture[A, B] ⇒ Unit): Unit = {
+    val fixture = new Fixture[A, B] {
+      def operation = op
     }
+    test(fixture, body)
+  }
 
-    private var verifiedForCleanExit = Seq.empty[Either[MockUpstream, MockDownstream]]
+  def test[F <: Fixture[_, _]](fixture: F, body: F ⇒ Unit): Unit = {
+    body(fixture)
+    import fixture._
+    expectNoRequestMore()
+    expectNoCancel()
+    expectNoNext()
+    expectNoComplete()
+    expectNoError()
+    expectNoRequestSubUpstream()
+    verifiedForCleanExit foreach {
+      case Left(substream) ⇒
+        substream.expectNoRequestMore()
+        substream.expectNoCancel()
+      case Right(substream) ⇒
+        substream.expectNoNext()
+        substream.expectNoComplete()
+        substream.expectNoError()
+    }
+  }
 
-    private val chain = new OperationChain(op, upstream, downstream, processorContext)
+  abstract class Fixture[A, B] extends MockUpstream with MockDownstream {
+    def operation: Operation[A, B]
 
+    private[OperationImplSpec] var verifiedForCleanExit = Seq.empty[Either[MockUpstream, MockDownstream]]
+    private val chain = new OperationChain(operation, upstream, downstream, processorContext)
     private var requestSubUpstreamCalls = Seq.empty[(Producer[_ <: Any], () ⇒ SubDownstreamHandling)]
+
     private def processorContext: OperationProcessor.Context =
       new OperationProcessor.Context {
         def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit =

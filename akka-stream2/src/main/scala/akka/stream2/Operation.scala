@@ -24,7 +24,7 @@ object Operation {
 
   def apply[A]: Identity[A] = Identity[A]()
 
-  implicit class Api1[A, B](val op: A ==> B) extends OperationApi1[B] {
+  implicit class Api[A, B](val op: A ==> B) extends OperationApi[B] {
     type Res[C] = A ==> C
 
     def ~>[C](next: B ==> C): Res[C] = op ~> next
@@ -42,11 +42,6 @@ object Operation {
       onElement(callback) produceTo StreamConsumer.blackHole[B]
   }
 
-  implicit class Api2[A, B](val op: A ==> Producer[B]) extends OperationApi2[B] {
-    type Res[C] = A ==> C
-    def ~>[C](next: Producer[B] ==> C): Res[C] = Operation.~>(op, next)
-  }
-
   /////////////////////////// MODEL ////////////////////////////
 
   final case class ~>[A, B, C](f: A ==> B, g: B ==> C) extends (A ==> C)
@@ -58,7 +53,7 @@ object Operation {
 
   final case class Concat[T](next: () ⇒ Producer[T]) extends (T ==> T)
 
-  final case class ConcatAll[T]() extends (Producer[T] ==> T)
+  final case class ConcatAll[A, B](implicit ev: Producable[A, B]) extends (A ==> B)
 
   final case class Drop[T](n: Int) extends (T ==> T)
 
@@ -72,7 +67,7 @@ object Operation {
 
   final case class Fold[A, B](seed: B, f: (B, A) ⇒ B) extends (A ==> B)
 
-  final case class Head[T]() extends (Producer[T] ==> T)
+  final case class Head[A, B](implicit ev: Producable[A, B]) extends (A ==> B)
 
   sealed abstract class Identity[A] extends (A ==> A)
   object Identity extends Identity[Nothing] {
@@ -86,9 +81,15 @@ object Operation {
 
   final case class Multiply[T](factor: Int) extends (T ==> T)
 
-  final case class OnElement[T](callback: T ⇒ Unit) extends (T ==> T)
-
-  final case class OnTerminate[T](callback: Option[Throwable] ⇒ Unit) extends (T ==> T)
+  final case class OnEvent[T](callback: StreamEvent[T] ⇒ Unit) extends (T ==> T)
+  sealed trait StreamEvent[+T]
+  object StreamEvent {
+    case class RequestMore(elements: Int) extends StreamEvent[Nothing]
+    case object Cancel extends StreamEvent[Nothing]
+    case class OnNext[T](value: T) extends StreamEvent[T]
+    case object OnComplete extends StreamEvent[Nothing]
+    case class OnError(cause: Throwable) extends StreamEvent[Nothing]
+  }
 
   final case class OuterMap[A, B](f: Producer[A] ⇒ Producer[B]) extends (A ==> B)
 

@@ -1,14 +1,16 @@
 package akka.stream2.impl.ops
 
+import org.reactivestreams.api.Producer
 import akka.stream2.Operation
 
 class ConcatAllSpec extends OperationImplSpec {
 
-  val op = Operation.ConcatAll[Char]()
+  val op = Operation.ConcatAll[Producer[Char], Char]
 
   "`Flatten` should" - {
 
-    "request one from super stream on first requestMore from downstream" in new Test(op) {
+    "request one from super stream on first requestMore from downstream" in test(op) { fixture ⇒
+      import fixture._
       requestMore(5)
       expectRequestMore(1)
       requestMore(2)
@@ -16,8 +18,8 @@ class ConcatAllSpec extends OperationImplSpec {
     }
 
     "while waiting for sub-stream subscription" - {
-      def playToWaitingForSubstreamSubscription[A, B](test: Test[A, B]) = {
-        import test._
+      def playToWaitingForSubstreamSubscription[A, B](fixture: Fixture[A, B]) = {
+        import fixture._
         requestMore(1)
         expectRequestMore(1)
         val flowA = mockProducer
@@ -25,29 +27,33 @@ class ConcatAllSpec extends OperationImplSpec {
         expectRequestSubUpstream(flowA)
       }
 
-      "gather up requestMore calls from downstream" in new Test(op) {
-        val subUpstream = playToWaitingForSubstreamSubscription(this)
+      "gather up requestMore calls from downstream" in test(op) { fixture ⇒
+        val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+        import fixture._
         requestMore(2, 3)
         subUpstream.onSubscribe()
         subUpstream.expectRequestMore(6)
       }
 
-      "properly handle empty sub streams" in new Test(op) {
-        val subUpstream = playToWaitingForSubstreamSubscription(this)
+      "properly handle empty sub streams" in test(op) { fixture ⇒
+        val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+        import fixture._
         subUpstream.onComplete()
         expectRequestMore(1)
       }
 
       "when receiving an error from the sub-stream" - {
-        "immediately propagate error to downstream and cancel super upstream if not yet cancelled" in new Test(op) {
-          val subUpstream = playToWaitingForSubstreamSubscription(this)
+        "immediately propagate error to downstream and cancel super upstream if not yet cancelled" in test(op) { fixture ⇒
+          val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+          import fixture._
           subUpstream.onError(TestException)
           expectError(TestException)
           expectCancel()
         }
-        "ignore error if downstream already cancelled" in new Test(op) {
-          val subUpstream = playToWaitingForSubstreamSubscription(this)
-          cancel()
+        "ignore error if downstream already cancelled" in test(op) { fixture ⇒
+          val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+          import fixture._
+          fixture.cancel()
           expectCancel()
           subUpstream.onError(TestException)
           expectNoError()
@@ -56,24 +62,27 @@ class ConcatAllSpec extends OperationImplSpec {
       }
 
       "when cancelled from downstream" - {
-        "immediately cancel super stream and eventually cancel non-empty sub stream" in new Test(op) {
-          val subUpstream = playToWaitingForSubstreamSubscription(this)
-          cancel()
+        "immediately cancel super stream and eventually cancel non-empty sub stream" in test(op) { fixture ⇒
+          val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+          import fixture._
+          fixture.cancel()
           expectCancel()
           subUpstream.onSubscribe()
           subUpstream.expectCancel()
         }
-        "immediately cancel super stream and ignore empty sub stream" in new Test(op) {
-          val subUpstream = playToWaitingForSubstreamSubscription(this)
-          cancel()
+        "immediately cancel super stream and ignore empty sub stream" in test(op) { fixture ⇒
+          val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+          import fixture._
+          fixture.cancel()
           expectCancel()
           subUpstream.onComplete()
         }
       }
 
       "remember onComplete from super stream and complete after" - {
-        "non-empty sub stream completion" in new Test(op) {
-          val subUpstream = playToWaitingForSubstreamSubscription(this)
+        "non-empty sub stream completion" in test(op) { fixture ⇒
+          val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+          import fixture._
           onComplete()
           subUpstream.onSubscribe()
           subUpstream.expectRequestMore(1)
@@ -86,8 +95,9 @@ class ConcatAllSpec extends OperationImplSpec {
           subUpstream.onComplete()
           expectComplete()
         }
-        "empty sub stream completion" in new Test(op) {
-          val subUpstream = playToWaitingForSubstreamSubscription(this)
+        "empty sub stream completion" in test(op) { fixture ⇒
+          val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+          import fixture._
           onComplete()
           subUpstream.onComplete()
           expectComplete()
@@ -95,8 +105,9 @@ class ConcatAllSpec extends OperationImplSpec {
       }
 
       "remember onError from super stream and propagate after" - {
-        "non-empty sub stream completion" in new Test(op) {
-          val subUpstream = playToWaitingForSubstreamSubscription(this)
+        "non-empty sub stream completion" in test(op) { fixture ⇒
+          val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+          import fixture._
           onError(TestException)
           subUpstream.onSubscribe()
           subUpstream.expectRequestMore(1)
@@ -106,8 +117,9 @@ class ConcatAllSpec extends OperationImplSpec {
           subUpstream.onComplete()
           expectError(TestException)
         }
-        "empty sub stream completion" in new Test(op) {
-          val subUpstream = playToWaitingForSubstreamSubscription(this)
+        "empty sub stream completion" in test(op) { fixture ⇒
+          val subUpstream = playToWaitingForSubstreamSubscription(fixture)
+          import fixture._
           onError(TestException)
           subUpstream.onComplete()
           expectError(TestException)
@@ -116,8 +128,8 @@ class ConcatAllSpec extends OperationImplSpec {
     }
 
     "while consuming substream" - {
-      def playToConsumingSubstream[A, B](test: Test[A, B]) = {
-        import test._
+      def playToConsumingSubstream[A, B](fixture: Fixture[A, B]) = {
+        import fixture._
         requestMore(1)
         expectRequestMore(1)
         val flowA = mockProducer
@@ -128,8 +140,9 @@ class ConcatAllSpec extends OperationImplSpec {
         subUpstream
       }
 
-      "request elements from sub stream and produce to downstream" in new Test(op) {
-        val subUpstream = playToConsumingSubstream(this)
+      "request elements from sub stream and produce to downstream" in test(op) { fixture ⇒
+        val subUpstream = playToConsumingSubstream(fixture)
+        import fixture._
         requestMore(1)
         subUpstream.expectRequestMore(1) // one other requestMore has already been received in `playToConsumingSubstream`
         subUpstream.onNext('A', 'B')
@@ -142,8 +155,9 @@ class ConcatAllSpec extends OperationImplSpec {
         subUpstream.expectNoRequestMore()
       }
 
-      "request next from super stream when sub stream is completed and properly carry over requested count" in new Test(op) {
-        val subUpstream = playToConsumingSubstream(this)
+      "request next from super stream when sub stream is completed and properly carry over requested count" in test(op) { fixture ⇒
+        val subUpstream = playToConsumingSubstream(fixture)
+        import fixture._
         subUpstream.onNext('A')
         expectNext('A')
         subUpstream.expectNoRequestMore()
@@ -158,8 +172,9 @@ class ConcatAllSpec extends OperationImplSpec {
         subUpstream2.expectRequestMore(5)
       }
 
-      "continue to produce to downstream when super stream completes and complete upon sub stream completion" in new Test(op) {
-        val subUpstream = playToConsumingSubstream(this)
+      "continue to produce to downstream when super stream completes and complete upon sub stream completion" in test(op) { fixture ⇒
+        val subUpstream = playToConsumingSubstream(fixture)
+        import fixture._
         subUpstream.onNext('A')
         expectNext('A')
         subUpstream.expectNoRequestMore()
@@ -172,8 +187,9 @@ class ConcatAllSpec extends OperationImplSpec {
         expectComplete()
       }
 
-      "continue to produce to downstream when super stream errors and propagate upon sub stream completion" in new Test(op) {
-        val subUpstream = playToConsumingSubstream(this)
+      "continue to produce to downstream when super stream errors and propagate upon sub stream completion" in test(op) { fixture ⇒
+        val subUpstream = playToConsumingSubstream(fixture)
+        import fixture._
         subUpstream.onNext('A')
         expectNext('A')
         subUpstream.expectNoRequestMore()
@@ -186,17 +202,19 @@ class ConcatAllSpec extends OperationImplSpec {
         expectError(TestException)
       }
 
-      "cancel sub stream and main stream when cancelled from downstream" in new Test(op) {
-        val subUpstream = playToConsumingSubstream(this)
+      "cancel sub stream and main stream when cancelled from downstream" in test(op) { fixture ⇒
+        val subUpstream = playToConsumingSubstream(fixture)
+        import fixture._
         subUpstream.onNext('A')
         expectNext('A')
-        cancel()
+        fixture.cancel()
         subUpstream.expectCancel()
         expectCancel()
       }
 
-      "immediately propagate sub stream error and cancel super stream" in new Test(op) {
-        val subUpstream = playToConsumingSubstream(this)
+      "immediately propagate sub stream error and cancel super stream" in test(op) { fixture ⇒
+        val subUpstream = playToConsumingSubstream(fixture)
+        import fixture._
         subUpstream.onNext('A')
         expectNext('A')
         subUpstream.onError(TestException)

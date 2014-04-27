@@ -14,7 +14,8 @@ trait MultiplyTests { this: OperationImplSpec ⇒
 
   def multiply5Tests(op: Operation[Char, Char]) = {
 
-    "reduce a requestMore(5) to requestMore(1) and gather up subsequent requestMore counts" in new Test(op) {
+    "reduce a requestMore(5) to requestMore(1) and gather up subsequent requestMore counts" in test(op) { fixture ⇒
+      import fixture._
       requestMore(5)
       expectRequestMore(1)
       requestMore(2)
@@ -22,7 +23,8 @@ trait MultiplyTests { this: OperationImplSpec ⇒
       expectNoRequestMore()
     }
 
-    "correctly multiply an upstream element if the request counts are smaller than the multiply factor" in new Test(op) {
+    "correctly multiply an upstream element if the request counts are smaller than the multiply factor" in test(op) { fixture ⇒
+      import fixture._
       requestMore(2)
       expectRequestMore(1)
       onNext('A')
@@ -37,7 +39,8 @@ trait MultiplyTests { this: OperationImplSpec ⇒
       expectRequestMore(1)
     }
 
-    "correctly multiply an upstream element if the request counts are greater than the multiply factor" in new Test(op) {
+    "correctly multiply an upstream element if the request counts are greater than the multiply factor" in test(op) { fixture ⇒
+      import fixture._
       requestMore(8)
       expectRequestMore(1)
       onNext('A')
@@ -54,7 +57,8 @@ trait MultiplyTests { this: OperationImplSpec ⇒
       expectNext('C', 'C', 'C', 'C')
     }
 
-    "continue to produce until the end of the current series if the upstream is completed" in new Test(op) {
+    "continue to produce until the end of the current series if the upstream is completed" in test(op) { fixture ⇒
+      import fixture._
       requestMore(3)
       expectRequestMore(1)
       onNext('A')
@@ -67,7 +71,8 @@ trait MultiplyTests { this: OperationImplSpec ⇒
       expectComplete()
     }
 
-    "immediately propagate upstream error" in new Test(op) {
+    "immediately propagate upstream error" in test(op) { fixture ⇒
+      import fixture._
       requestMore(3)
       expectRequestMore(1)
       onNext('A')
@@ -76,12 +81,14 @@ trait MultiplyTests { this: OperationImplSpec ⇒
       expectError(TestException)
     }
 
-    "propagate cancel" in new Test(op) {
-      cancel()
+    "propagate cancel" in test(op) { fixture ⇒
+      import fixture._
+      fixture.cancel()
       expectCancel()
     }
 
-    "propagate an empty stream" in new Test(op) {
+    "propagate an empty stream" in test(op) { fixture ⇒
+      import fixture._
       onComplete()
       expectComplete()
     }

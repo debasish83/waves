@@ -26,7 +26,7 @@ object Flow {
   implicit def fromFuture[T](future: Future[T])(implicit ec: ExecutionContext): Flow[T] = apply(future)
   implicit def fromIterable[T](iterable: Iterable[T])(implicit ec: ExecutionContext): Flow[T] = apply(iterable)
 
-  implicit class Api1[A](val flow: Flow[A]) extends OperationApi1[A] {
+  implicit class Api[A](val flow: Flow[A]) extends OperationApi[A] {
     type Res[B] = Flow[B]
 
     def ~>[B](next: A ==> B): Flow[B] = flow ~> next
@@ -57,11 +57,6 @@ object Flow {
     // drains the stream into a Seq
     def drainToSeq(implicit refFactory: ActorRefFactory, ec: ExecutionContext): Future[immutable.Seq[A]] =
       fold(new VectorBuilder[A])(_ += _).map(_.result()).headFuture
-  }
-
-  implicit class Api2[A](val flow: Flow[Producer[A]]) extends OperationApi2[A] {
-    type Res[B] = Flow[B]
-    def ~>[B](next: Producer[A] ==> B): Flow[B] = flow ~> next
   }
 
   /////////////////////// MODEL //////////////////////

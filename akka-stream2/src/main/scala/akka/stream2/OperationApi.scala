@@ -6,8 +6,8 @@ import org.reactivestreams.api.{ Consumer, Producer }
 import akka.actor.ActorRefFactory
 import Operation._
 
-trait OperationApi1[A] extends Any {
-  import OperationApi1._
+trait OperationApi[A] extends Any {
+  import OperationApi._
 
   type Res[_]
 
@@ -32,6 +32,16 @@ trait OperationApi1[A] extends Any {
         def apply(b: B): Seq[B] = b :: Nil
         def onNext(elem: A) = pfa.applyOrElse(elem, nil)
       }
+    }
+
+  // flattens the upstream by concatenation
+  // only available if the stream elements are themselves producable as a Producer[B]
+  def concatAll[B](implicit ev: Producable[A, B]): Res[B] = this ~> ConcatAll[A, B]
+
+  // alternative `concatAll` implementation
+  def concatAll2[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory): Res[B] =
+    this ~> OuterMap[A, B] {
+      case Producable(FanOut.Tee(p1, p2)) ⇒ Flow(p1).head.concat(Flow(p2).tail.concatAll2.toProducer).toProducer
     }
 
   // "compresses" a fast upstream by keeping one element buffered and reducing surplus values using the given function
@@ -93,6 +103,19 @@ trait OperationApi1[A] extends Any {
   def forAll(p: A ⇒ Boolean): Res[Boolean] =
     mapFind(x ⇒ if (!p(x)) SomeFalse else None, SomeTrue)
 
+  // "extracts" the first element
+  // only available if the stream elements are themselves producable as a Producer[B]
+  def head[B](implicit ev: Producable[A, B]): Res[B] = this ~> Head[A, B]
+
+  // maps the inner streams into a (head, tail) Tuple each
+  // only available if the stream elements are themselves producable as a Producer[B]
+  def headAndTail[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory): Res[(B, Producer[B])] = {
+    def headTail: A ⇒ Producer[(B, Producer[B])] = {
+      case Producable(FanOut.Tee(p1, p2)) ⇒ Flow(p1).headStream.map(_ -> Flow(p2).tail.toProducer).toProducer
+    }
+    this ~> (Map(headTail) ~> ConcatAll[Producer[(B, Producer[B])], (B, Producer[B])])
+  }
+
   // produces the first upstream element, unsubscribes afterwards
   def headStream: Res[A] = this ~> Take(1)
 
@@ -101,7 +124,7 @@ trait OperationApi1[A] extends Any {
 
   // combined map & concat operation
   def mapConcat[B, P](f: A ⇒ P)(implicit ev: Producable[P, B]): Res[B] =
-    this ~> (Map[A, Producer[B]](b ⇒ ev(f(b))) ~> ConcatAll[B]())
+    this ~> (Map[A, Producer[B]](a ⇒ ev(f(a))) ~> ConcatAll[Producer[B], B])
 
   // produces the first A returned by f or optionally the given default value
   // consumes at max rate until f returns a Some, unsubscribes afterwards
@@ -124,21 +147,40 @@ trait OperationApi1[A] extends Any {
   // repeats each element coming in from upstream `factor` times
   def multiply(factor: Int): Res[A] = this ~> Multiply[A](factor)
 
+  // attaches the given callback which "listens" to `cancel' events without otherwise affecting the stream
+  def onCancel[U](callback: ⇒ U): Res[A] =
+    onEventPF { case StreamEvent.Cancel ⇒ callback }
+
   // attaches the given callback which "listens" to `onComplete' events without otherwise affecting the stream
   def onComplete[U](callback: ⇒ U): Res[A] =
-    onTerminate { errorOption ⇒ if (errorOption.isEmpty) callback }
+    onEventPF { case StreamEvent.OnComplete ⇒ callback }
 
   // attaches the given callback which "listens" to `onNext' events without otherwise affecting the stream
   def onElement(callback: A ⇒ Unit): Res[A] =
-    this ~> OnElement(callback)
+    onEventPF { case StreamEvent.OnNext(element) ⇒ callback(element) }
 
   // attaches the given callback which "listens" to `onError' events without otherwise affecting the stream
   def onError[U](callback: Throwable ⇒ U): Res[A] =
-    onTerminate { errorOption ⇒ if (errorOption.isDefined) callback(errorOption.get) }
+    onEventPF { case StreamEvent.OnError(cause) ⇒ callback(cause) }
+
+  // attaches the given callback which "listens" to all stream events without otherwise affecting the stream
+  def onEvent(callback: StreamEvent[A] ⇒ Unit): Res[A] =
+    this ~> OnEvent(callback)
+
+  // attaches the given callback which "listens" to all stream events without otherwise affecting the stream
+  def onEventPF(callback: PartialFunction[StreamEvent[A], Unit]): Res[A] =
+    onEvent(ev ⇒ callback.applyOrElse(ev, (_: Any) ⇒ ()))
+
+  // attaches the given callback which "listens" to `requestMore' events without otherwise affecting the stream
+  def onRequestMore(callback: Int ⇒ Unit): Res[A] =
+    onEventPF { case StreamEvent.RequestMore(elements) ⇒ callback(elements) }
 
   // attaches the given callback which "listens" to `onComplete' and `onError` events without otherwise affecting the stream
   def onTerminate(callback: Option[Throwable] ⇒ Unit): Res[A] =
-    this ~> OnTerminate[A](callback)
+    onEventPF {
+      case StreamEvent.OnComplete     ⇒ callback(None)
+      case StreamEvent.OnError(cause) ⇒ callback(Some(cause))
+    }
 
   // chains in the given operation
   def op[B](operation: A ==> B): Res[B] = this ~> operation
@@ -190,33 +232,7 @@ trait OperationApi1[A] extends Any {
     fanIn(secondary, FanIn.Zip[A, B]())
 }
 
-object OperationApi1 {
+object OperationApi {
   private val SomeTrue = Some(true)
   private val SomeFalse = Some(false)
-}
-
-trait OperationApi2[A] extends Any {
-  type Res[_]
-
-  def ~>[B](next: Producer[A] ==> B): Res[B]
-
-  // "extracts" the first `Producer[A]` element of a stream of streams
-  def head: Res[A] = this ~> Head()
-
-  // maps the inner streams into a (head, tail) Tuple each
-  def headAndTail(implicit refFactory: ActorRefFactory): Res[(A, Producer[A])] = {
-    def headTail: Producer[A] ⇒ Producer[(A, Producer[A])] = {
-      case FanOut.Tee(p1, p2) ⇒ Flow(p1).headStream.map(_ -> Flow(p2).tail.toProducer).toProducer
-    }
-    this ~> (Map(headTail) ~> ConcatAll())
-  }
-
-  // flattens the upstream by concatenation
-  def concatAll: Res[A] = this ~> ConcatAll()
-
-  // alternative `concatAll` implementation
-  def concatAll2(implicit refFactory: ActorRefFactory): Res[A] =
-    this ~> OuterMap[Producer[A], A] {
-      case FanOut.Tee(p1, p2) ⇒ Flow(p1).head.concat(Flow(p2).tail.concatAll2.toProducer).toProducer
-    }
 }

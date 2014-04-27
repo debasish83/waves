@@ -8,14 +8,16 @@ class FilterSpec extends OperationImplSpec {
 
   "`Filter` should" - {
 
-    "propagate requestMore" in new Test(op) {
+    "propagate requestMore" in test(op) { fixture ⇒
+      import fixture._
       requestMore(5)
       expectRequestMore(5)
       requestMore(2)
       expectRequestMore(2)
     }
 
-    "propagate elements that satisfy the filter condition" in new Test(op) {
+    "propagate elements that satisfy the filter condition" in test(op) { fixture ⇒
+      import fixture._
       requestMore(3)
       expectRequestMore(3)
       onNext('a', 'b')
@@ -24,7 +26,8 @@ class FilterSpec extends OperationImplSpec {
       expectNext('c')
     }
 
-    "drop elements that don't satisfy the filter condition and requestMore(1) for them" in new Test(op) {
+    "drop elements that don't satisfy the filter condition and requestMore(1) for them" in test(op) { fixture ⇒
+      import fixture._
       requestMore(3)
       expectRequestMore(3)
       onNext('a', 'B')
@@ -34,23 +37,27 @@ class FilterSpec extends OperationImplSpec {
       expectNext('c', 'd')
     }
 
-    "propagate cancel" in new Test(op) {
-      cancel()
+    "propagate cancel" in test(op) { fixture ⇒
+      import fixture._
+      fixture.cancel()
       expectCancel()
     }
 
-    "propagate complete" in new Test(op) {
+    "propagate complete" in test(op) { fixture ⇒
+      import fixture._
       onComplete()
       expectComplete()
     }
 
-    "propagate error" in new Test(op) {
+    "propagate error" in test(op) { fixture ⇒
+      import fixture._
       onError(TestException)
       expectError(TestException)
     }
 
     "when the user function throws an error: propagate as onError and cancel upstream" in
-      new Test(Operation.Filter[Char](_ ⇒ throw TestException)) {
+      test(Operation.Filter[Char](_ ⇒ throw TestException)) { fixture ⇒
+        import fixture._
         requestMore(1)
         expectRequestMore(1)
         onNext('A')

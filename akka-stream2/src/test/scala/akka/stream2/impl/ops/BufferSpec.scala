@@ -16,7 +16,8 @@ class BufferSpec extends OperationImplSpec {
         },
         canConsume = _.length < 5) // buffer is bounded to a capacity of 5
 
-      "drain the seed state if no elements come in from upstream" in new Test(op) {
+      "drain the seed state if no elements come in from upstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(2)
         expectRequestMore(1)
         expectNext('A', 'B')
@@ -25,7 +26,8 @@ class BufferSpec extends OperationImplSpec {
         expectNext('C')
       }
 
-      "consume from upstream until buffer is full if no further elements are requested from downstream" in new Test(op) {
+      "consume from upstream until buffer is full if no further elements are requested from downstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(1)
         expectRequestMore(1)
         expectNext('A') // buffer is now "BC"
@@ -37,17 +39,20 @@ class BufferSpec extends OperationImplSpec {
         expectNoRequestMore()
       }
 
-      "propagate cancel" in new Test(op) {
-        cancel()
+      "propagate cancel" in test(op) { fixture ⇒
+        import fixture._
+        fixture.cancel()
         expectCancel()
       }
 
-      "propagate complete" in new Test(op) {
+      "propagate complete" in test(op) { fixture ⇒
+        import fixture._
         onComplete()
         expectComplete()
       }
 
-      "propagate error" in new Test(op) {
+      "propagate error" in test(op) { fixture ⇒
+        import fixture._
         onError(TestException)
         expectError(TestException)
       }
@@ -61,7 +66,8 @@ class BufferSpec extends OperationImplSpec {
         canConsume = _ ⇒ true)
 
       "when downstream consumes faster than upstream can produce" - {
-        "produce the last element at max rate to downstream and update when new element comes in from upstream" in new Test(op) {
+        "produce the last element at max rate to downstream and update when new element comes in from upstream" in test(op) { fixture ⇒
+          import fixture._
           requestMore(3)
           expectRequestMore(1)
           onNext('A)
@@ -77,7 +83,8 @@ class BufferSpec extends OperationImplSpec {
       }
 
       "when upstream produces faster than downstream can consume" - {
-        "compress elements coming in from upstream and dispatch the current result when downstream requests" in new Test(op) {
+        "compress elements coming in from upstream and dispatch the current result when downstream requests" in test(op) { fixture ⇒
+          import fixture._
           requestMore(1)
           expectRequestMore(1)
           onNext('A)
@@ -102,7 +109,8 @@ class BufferSpec extends OperationImplSpec {
         expand = buffer ⇒ buffer -> buffer,
         canConsume = _ ⇒ true)
 
-      "propagate as onError and cancel upstream" in new Test(op) {
+      "propagate as onError and cancel upstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(3)
         expectRequestMore(1)
         onNext('A)
@@ -118,7 +126,8 @@ class BufferSpec extends OperationImplSpec {
         expand = _ ⇒ throw TestException,
         canConsume = _ ⇒ true)
 
-      "propagate as onError and cancel upstream" in new Test(op) {
+      "propagate as onError and cancel upstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(3)
         expectError(TestException)
         expectCancel()
@@ -132,7 +141,8 @@ class BufferSpec extends OperationImplSpec {
         expand = buffer ⇒ buffer -> buffer,
         canConsume = _ ⇒ throw TestException)
 
-      "propagate as onError and cancel upstream" in new Test(op) {
+      "propagate as onError and cancel upstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(3)
         expectError(TestException)
         expectCancel()

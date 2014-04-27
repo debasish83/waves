@@ -13,6 +13,8 @@ import scala.concurrent.{ ExecutionContext, Future }
 trait Producable[P, T] extends (P ⇒ Producer[T])
 
 object Producable {
+  def unapply[A, B](element: A)(implicit ev: Producable[A, B]): Option[Producer[B]] = Some(ev(element))
+
   // TODO: where possible: reduce allocation by casting a static instance
 
   implicit def forProducer[T] = new Producable[Producer[T], T] {

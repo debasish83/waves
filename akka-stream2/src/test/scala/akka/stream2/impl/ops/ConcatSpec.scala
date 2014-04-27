@@ -11,30 +11,35 @@ class ConcatSpec extends OperationImplSpec {
 
     "before completion of first upstream" - {
 
-      "propagate requestMore" in new Test(op) {
+      "propagate requestMore" in test(op) { fixture ⇒
+        import fixture._
         requestMore(5)
         expectRequestMore(5)
         requestMore(2)
         expectRequestMore(2)
       }
 
-      "propagate cancel" in new Test(op) {
-        cancel()
+      "propagate cancel" in test(op) { fixture ⇒
+        import fixture._
+        fixture.cancel()
         expectCancel()
       }
 
-      "not propagate complete" in new Test(op) {
+      "not propagate complete" in test(op) { fixture ⇒
+        import fixture._
         onComplete()
         expectNoComplete()
         expectRequestSubUpstream(producer2)
       }
 
-      "propagate error" in new Test(op) {
+      "propagate error" in test(op) { fixture ⇒
+        import fixture._
         onError(TestException)
         expectError(TestException)
       }
 
-      "forward elements to downstream" in new Test(op) {
+      "forward elements to downstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(1, 2)
         expectRequestMore(1, 2)
         onNext('A', 'B', 'C')
@@ -43,52 +48,58 @@ class ConcatSpec extends OperationImplSpec {
     }
 
     "while waiting for subscription to second upstream" - {
-      def playToWaitingForSubscription[A, B](test: Test[A, B]) = {
-        import test._
+      def playToWaitingForSubscription[A, B](fixture: Fixture[A, B]) = {
+        import fixture._
         requestMore(1)
         expectRequestMore(1)
         onComplete()
         expectRequestSubUpstream(producer2)
       }
 
-      "gather up requestMore calls from downstream" in new Test(op) {
-        val upstream2 = playToWaitingForSubscription(this)
+      "gather up requestMore calls from downstream" in test(op) { fixture ⇒
+        val upstream2 = playToWaitingForSubscription(fixture)
+        import fixture._
         requestMore(2)
         requestMore(1) // now the downstream has requested a total of 4 elements
         upstream2.onSubscribe()
         upstream2.expectRequestMore(4)
       }
 
-      "immediately complete downstream if second upstream is completed before subscription" in new Test(op) {
-        val upstream2 = playToWaitingForSubscription(this)
+      "immediately complete downstream if second upstream is completed before subscription" in test(op) { fixture ⇒
+        val upstream2 = playToWaitingForSubscription(fixture)
+        import fixture._
         upstream2.onComplete()
         expectComplete()
       }
 
       "when receiving an error from the second upstream" - {
-        "immediately propagate error to downstream if downstream has not yet cancelled" in new Test(op) {
-          val upstream2 = playToWaitingForSubscription(this)
+        "immediately propagate error to downstream if downstream has not yet cancelled" in test(op) { fixture ⇒
+          val upstream2 = playToWaitingForSubscription(fixture)
+          import fixture._
           upstream2.onError(TestException)
           expectError(TestException)
         }
-        "ignore error if downstream already cancelled" in new Test(op) {
-          val upstream2 = playToWaitingForSubscription(this)
-          cancel()
+        "ignore error if downstream already cancelled" in test(op) { fixture ⇒
+          val upstream2 = playToWaitingForSubscription(fixture)
+          import fixture._
+          fixture.cancel()
           upstream2.onError(TestException)
           expectNoError()
         }
       }
 
       "when cancelled from downstream" - {
-        "eventually cancel second upstream" in new Test(op) {
-          val upstream2 = playToWaitingForSubscription(this)
-          cancel()
+        "eventually cancel second upstream" in test(op) { fixture ⇒
+          val upstream2 = playToWaitingForSubscription(fixture)
+          import fixture._
+          fixture.cancel()
           upstream2.onSubscribe()
           upstream2.expectCancel()
         }
-        "don't cancel second upstream if it is empty" in new Test(op) {
-          val upstream2 = playToWaitingForSubscription(this)
-          cancel()
+        "don't cancel second upstream if it is empty" in test(op) { fixture ⇒
+          val upstream2 = playToWaitingForSubscription(fixture)
+          import fixture._
+          fixture.cancel()
           upstream2.onComplete()
           upstream2.expectNoCancel()
         }
@@ -96,8 +107,8 @@ class ConcatSpec extends OperationImplSpec {
     }
 
     "after subscription to second upstream" - {
-      def playToAfterSubscriptionToSecondUpstream[A, B](test: Test[A, B]) = {
-        import test._
+      def playToAfterSubscriptionToSecondUpstream[A, B](fixture: Fixture[A, B]) = {
+        import fixture._
         requestMore(1)
         expectRequestMore(1)
         onComplete()
@@ -107,34 +118,39 @@ class ConcatSpec extends OperationImplSpec {
         upstream2
       }
 
-      "propagate requestMore" in new Test(op) {
-        val upstream2 = playToAfterSubscriptionToSecondUpstream(this)
+      "propagate requestMore" in test(op) { fixture ⇒
+        val upstream2 = playToAfterSubscriptionToSecondUpstream(fixture)
+        import fixture._
         requestMore(5)
         upstream2.expectRequestMore(5)
         requestMore(2)
         upstream2.expectRequestMore(2)
       }
 
-      "propagate cancel" in new Test(op) {
-        val upstream2 = playToAfterSubscriptionToSecondUpstream(this)
-        cancel()
+      "propagate cancel" in test(op) { fixture ⇒
+        val upstream2 = playToAfterSubscriptionToSecondUpstream(fixture)
+        import fixture._
+        fixture.cancel()
         upstream2.expectCancel()
       }
 
-      "propagate complete" in new Test(op) {
-        val upstream2 = playToAfterSubscriptionToSecondUpstream(this)
+      "propagate complete" in test(op) { fixture ⇒
+        val upstream2 = playToAfterSubscriptionToSecondUpstream(fixture)
+        import fixture._
         upstream2.onComplete()
         expectComplete()
       }
 
-      "propagate error" in new Test(op) {
-        val upstream2 = playToAfterSubscriptionToSecondUpstream(this)
+      "propagate error" in test(op) { fixture ⇒
+        val upstream2 = playToAfterSubscriptionToSecondUpstream(fixture)
+        import fixture._
         upstream2.onError(TestException)
         expectError(TestException)
       }
 
-      "forward elements to downstream" in new Test(op) {
-        val upstream2 = playToAfterSubscriptionToSecondUpstream(this)
+      "forward elements to downstream" in test(op) { fixture ⇒
+        val upstream2 = playToAfterSubscriptionToSecondUpstream(fixture)
+        import fixture._
         requestMore(3)
         upstream2.expectRequestMore(3)
         upstream2.onNext('A', 'B', 'C')

@@ -31,6 +31,9 @@ object FanOut {
     }
   }
 
+  /**
+   * An unbuffered fanout that never drops elements and only cancels upstream when both downstreams have cancelled.
+   */
   object Tee extends Provider[Tee] {
     def apply(upstream: Upstream, primaryDownstream: Downstream, secondaryDownstream: Downstream): Tee[Any] =
       new Tee(upstream, primaryDownstream, secondaryDownstream)

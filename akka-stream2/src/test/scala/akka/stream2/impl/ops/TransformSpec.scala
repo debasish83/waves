@@ -1,7 +1,6 @@
 package akka.stream2.impl.ops
 
 import akka.stream2.Operation
-import scala.collection.immutable
 
 class TransformSpec extends OperationImplSpec with MultiplyTests {
 
@@ -16,7 +15,8 @@ class TransformSpec extends OperationImplSpec with MultiplyTests {
         }
       }
 
-      "fold upstream elements with the user function" in new Test(op) {
+      "fold upstream elements with the user function" in test(op) { fixture ⇒
+        import fixture._
         requestMore(1)
         expectRequestMore(1)
         onNext('A')
@@ -50,7 +50,8 @@ class TransformSpec extends OperationImplSpec with MultiplyTests {
         }
       }
 
-      "propagate the first n elements from upstream, then complete downstream and cancel upstream" in new Test(op) {
+      "propagate the first n elements from upstream, then complete downstream and cancel upstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(2)
         expectRequestMore(1)
         onNext('A')
@@ -77,7 +78,8 @@ class TransformSpec extends OperationImplSpec with MultiplyTests {
         }
       }
 
-      "propagate as onError and cancel upstream" in new Test(op) {
+      "propagate as onError and cancel upstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(3)
         expectRequestMore(1)
         onNext('A')
@@ -95,7 +97,8 @@ class TransformSpec extends OperationImplSpec with MultiplyTests {
         }
       }
 
-      "propagate as onError and cancel upstream" in new Test(op) {
+      "propagate as onError and cancel upstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(2)
         expectRequestMore(1)
         onNext('A')
@@ -114,7 +117,8 @@ class TransformSpec extends OperationImplSpec with MultiplyTests {
         }
       }
 
-      "propagate as onError and cancel upstream" in new Test(op) {
+      "propagate as onError and cancel upstream" in test(op) { fixture ⇒
+        import fixture._
         requestMore(2)
         expectRequestMore(1)
         onNext('A')

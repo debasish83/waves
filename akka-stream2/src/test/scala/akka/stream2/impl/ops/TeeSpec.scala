@@ -2,22 +2,17 @@ package akka.stream2
 package impl
 package ops
 
-import scala.util.DynamicVariable
-
 class TeeSpec extends OperationImplSpec {
-
-  val _sub = new DynamicVariable[MockDownstream](null)
-  def sub = _sub.value
-
-  val op = Operation.FanOutBox[Char, FanOut.Tee](FanOut.Tee, producer ⇒ _sub.value = producer.asInstanceOf[MockDownstream])
 
   "`Tee` should" - {
 
-    "immediately execute its argument function" in new Test(op) {
+    "immediately execute its argument function" in teeTest { fixture ⇒
+      import fixture._
       sub should not be null
     }
 
-    "request from upstream only when both substreams have requested" in new Test(op) {
+    "request from upstream only when both substreams have requested" in teeTest { fixture ⇒
+      import fixture._
       requestMore(5)
       expectNoRequestMore()
       sub.requestMore(3)
@@ -26,7 +21,8 @@ class TeeSpec extends OperationImplSpec {
       expectRequestMore(2)
     }
 
-    "propagate elements to both downstreams" in new Test(op) {
+    "propagate elements to both downstreams" in teeTest { fixture ⇒
+      import fixture._
       requestMore(2)
       sub.requestMore(2)
       expectRequestMore(2)
@@ -38,13 +34,15 @@ class TeeSpec extends OperationImplSpec {
       sub.expectNext('b')
     }
 
-    "propagate completion to both downstreams" in new Test(op) {
+    "propagate completion to both downstreams" in teeTest { fixture ⇒
+      import fixture._
       onComplete()
       expectComplete()
       sub.expectComplete()
     }
 
-    "propagate errors to both downstreams" in new Test(op) {
+    "propagate errors to both downstreams" in teeTest { fixture ⇒
+      import fixture._
       onError(TestException)
       expectError(TestException)
       sub.expectError(TestException)
@@ -52,21 +50,24 @@ class TeeSpec extends OperationImplSpec {
 
     "when main downstream has cancelled" - {
 
-      "propagate requestMores from downstream2" in new Test(op) {
-        cancel()
+      "propagate requestMores from downstream2" in teeTest { fixture ⇒
+        import fixture._
+        fixture.cancel()
         sub.requestMore(3)
         expectRequestMore(3)
       }
 
-      "'unlock' pending requestMores from downstream2" in new Test(op) {
+      "'unlock' pending requestMores from downstream2" in teeTest { fixture ⇒
+        import fixture._
         sub.requestMore(3)
         expectNoRequestMore()
-        cancel()
+        fixture.cancel()
         expectRequestMore(3)
       }
 
-      "propagate elements to downstreams2" in new Test(op) {
-        cancel()
+      "propagate elements to downstreams2" in teeTest { fixture ⇒
+        import fixture._
+        fixture.cancel()
         sub.requestMore(2)
         expectRequestMore(2)
         onNext('a')
@@ -75,20 +76,23 @@ class TeeSpec extends OperationImplSpec {
         sub.expectNext('b')
       }
 
-      "propagate completion to downstream2" in new Test(op) {
-        cancel()
+      "propagate completion to downstream2" in teeTest { fixture ⇒
+        import fixture._
+        fixture.cancel()
         onComplete()
         sub.expectComplete()
       }
 
-      "propagate errors to downstream2" in new Test(op) {
-        cancel()
+      "propagate errors to downstream2" in teeTest { fixture ⇒
+        import fixture._
+        fixture.cancel()
         onError(TestException)
         sub.expectError(TestException)
       }
 
-      "cancel upstream when downstream2 cancels as well" in new Test(op) {
-        cancel()
+      "cancel upstream when downstream2 cancels as well" in teeTest { fixture ⇒
+        import fixture._
+        fixture.cancel()
         expectNoCancel()
         sub.cancel()
         expectCancel()
@@ -97,20 +101,23 @@ class TeeSpec extends OperationImplSpec {
 
     "when downstream2 has cancelled" - {
 
-      "propagate requestMores from main downstream" in new Test(op) {
+      "propagate requestMores from main downstream" in teeTest { fixture ⇒
+        import fixture._
         sub.cancel()
         requestMore(3)
         expectRequestMore(3)
       }
 
-      "'unlock' pending requestMores from main downstream" in new Test(op) {
+      "'unlock' pending requestMores from main downstream" in teeTest { fixture ⇒
+        import fixture._
         requestMore(3)
         expectNoRequestMore()
         sub.cancel()
         expectRequestMore(3)
       }
 
-      "propagate elements to main downstreams" in new Test(op) {
+      "propagate elements to main downstreams" in teeTest { fixture ⇒
+        import fixture._
         sub.cancel()
         requestMore(2)
         expectRequestMore(2)
@@ -120,24 +127,34 @@ class TeeSpec extends OperationImplSpec {
         expectNext('b')
       }
 
-      "propagate completion to main downstream" in new Test(op) {
+      "propagate completion to main downstream" in teeTest { fixture ⇒
+        import fixture._
         sub.cancel()
         onComplete()
         expectComplete()
       }
 
-      "propagate errors to main downstream" in new Test(op) {
+      "propagate errors to main downstream" in teeTest { fixture ⇒
+        import fixture._
         sub.cancel()
         onError(TestException)
         expectError(TestException)
       }
 
-      "cancel upstream when main downstream cancels as well" in new Test(op) {
+      "cancel upstream when main downstream cancels as well" in teeTest { fixture ⇒
+        import fixture._
         sub.cancel()
         expectNoCancel()
-        cancel()
+        fixture.cancel()
         expectCancel()
       }
     }
+  }
+
+  def teeTest(body: TeeFixture ⇒ Unit): Unit = test(new TeeFixture, body)
+
+  class TeeFixture extends Fixture[Char, Char] {
+    var sub: MockDownstream = _
+    def operation = Operation.FanOutBox[Char, FanOut.Tee](FanOut.Tee, p ⇒ sub = p.asInstanceOf[MockDownstream])
   }
 }

@@ -8,30 +8,35 @@ class FoldSpec extends OperationImplSpec {
 
   "`Fold` should" - {
 
-    "propagate requestMore" in new Test(op) {
+    "propagate requestMore" in test(op) { fixture ⇒
+      import fixture._
       requestMore(5)
       expectRequestMore(5)
       requestMore(2)
       expectRequestMore(2)
     }
 
-    "propagate cancel" in new Test(op) {
-      cancel()
+    "propagate cancel" in test(op) { fixture ⇒
+      import fixture._
+      fixture.cancel()
       expectCancel()
     }
 
-    "propagate complete" in new Test(op) {
+    "propagate complete" in test(op) { fixture ⇒
+      import fixture._
       onComplete()
       expectNext("")
       expectComplete()
     }
 
-    "propagate error" in new Test(op) {
+    "propagate error" in test(op) { fixture ⇒
+      import fixture._
       onError(TestException)
       expectError(TestException)
     }
 
-    "fold upstream elements with the user function" in new Test(op) {
+    "fold upstream elements with the user function" in test(op) { fixture ⇒
+      import fixture._
       requestMore(1)
       expectRequestMore(1)
       onNext('A')
@@ -46,7 +51,8 @@ class FoldSpec extends OperationImplSpec {
     }
 
     "when the user function throws an error: propagate as onError and cancel upstream" in
-      new Test(Operation.Fold[Char, String]("", (_, _) ⇒ throw TestException)) {
+      test(Operation.Fold[Char, String]("", (_, _) ⇒ throw TestException)) { fixture ⇒
+        import fixture._
         requestMore(1)
         expectRequestMore(1)
         onNext('A')
