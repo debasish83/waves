@@ -2,6 +2,7 @@ package org.reactivestreams.tck // TODO: move back out of this package once the 
 
 import org.reactivestreams.api.Producer
 import org.scalatest.matchers.Matcher
+import com.typesafe.config.{ Config, ConfigFactory }
 import scala.concurrent.duration._
 import scala.concurrent.Await
 import akka.actor.ActorSystem
@@ -9,14 +10,18 @@ import akka.stream2._
 import org.scalatest._
 import Operation.Split
 
-class ExamplesSpec(override val system: ActorSystem) extends TestEnvironment(Timeouts.defaultTimeoutMillis(system))
-  with FreeSpecLike with Matchers with WithActorSystemScalatest {
-  implicit def refFactory = system
+class ExamplesSpec extends FreeSpec with Matchers with BeforeAndAfterAll {
+  val testConf: Config = ConfigFactory.parseString("""
+    akka.event-handlers = ["akka.testkit.TestEventListener"]
+    akka.loglevel = WARNING""")
+  implicit val system = ActorSystem(getClass.getSimpleName, testConf)
+  override protected def afterAll(): Unit = system.shutdown()
   import system.dispatcher
 
   "The OperationImpl infrastructure should properly execute" - {
 
     "a simple operations chain (example 1)" in {
+      flow(1 to 4) should produce(1, 2, 3, 4)
       flow(1 to 20).filter(_ % 2 == 0) should produce(2, 4, 6, 8, 10, 12, 14, 16, 18, 20)
       flow(1 to 20).filter(_ % 2 == 0).map(_ * 3) should produce(6, 12, 18, 24, 30, 36, 42, 48, 54, 60)
       flow(1 to 20).filter(_ % 2 == 0).map(_ * 3).take(5) should produce(6, 12, 18, 24, 30)
@@ -44,6 +49,14 @@ class ExamplesSpec(override val system: ActorSystem) extends TestEnvironment(Tim
       flow(1 to 10)
         .split(x ⇒ if (x % 4 == 0) Split.First else Split.Append)
         .mapConcat(Flow(_).fold("")(_ + _.toString).toProducer) should produce("123", "4567", "8910")
+    }
+
+    "headAndTail" in {
+      flow(flow(1 to 4).toProducer, flow(7 to 9).toProducer)
+        .headAndTail
+        .mapConcat {
+          case (head, tail) ⇒ Flow(tail).drainToSeq.map(head -> _)
+        } should produce(1 -> Seq(2, 3, 4), 7 -> Seq(8, 9))
     }
 
     "custom operations" in {

@@ -2,6 +2,7 @@ package akka.stream2
 
 import scala.language.{ higherKinds, implicitConversions }
 import scala.util.{ Failure, Success, Try }
+import scala.concurrent.ExecutionContext
 import org.reactivestreams.api.{ Consumer, Producer }
 import akka.actor.ActorRefFactory
 import Operation._
@@ -39,7 +40,7 @@ trait OperationApi[A] extends Any {
   def concatAll[B](implicit ev: Producable[A, B]): Res[B] = this ~> ConcatAll[A, B]
 
   // alternative `concatAll` implementation
-  def concatAll2[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory): Res[B] =
+  def concatAll2[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory, ec: ExecutionContext): Res[B] =
     this ~> OuterMap[A, B] {
       case Producable(FanOut.Tee(p1, p2)) ⇒ Flow(p1).head.concat(Flow(p2).tail.concatAll2.toProducer).toProducer
     }
@@ -109,7 +110,7 @@ trait OperationApi[A] extends Any {
 
   // maps the inner streams into a (head, tail) Tuple each
   // only available if the stream elements are themselves producable as a Producer[B]
-  def headAndTail[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory): Res[(B, Producer[B])] = {
+  def headAndTail[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory, ec: ExecutionContext): Res[(B, Producer[B])] = {
     def headTail: A ⇒ Producer[(B, Producer[B])] = {
       case Producable(FanOut.Tee(p1, p2)) ⇒ Flow(p1).headStream.map(_ -> Flow(p2).tail.toProducer).toProducer
     }
@@ -187,6 +188,9 @@ trait OperationApi[A] extends Any {
 
   // transforms the underlying stream itself (not its elements) with the given function
   def outerMap[B](f: Producer[A] ⇒ Producer[B]): Res[B] = this ~> OuterMap(f)
+
+  // debugging help: simply printlns all events passing through
+  def printEvent(marker: String): Res[A] = onEvent(ev ⇒ println(s"$marker: $ev"))
 
   // lifts errors from upstream back into the main data flow before completing normally
   def recover[B <: A](f: Throwable ⇒ Seq[B]): Res[B] = this ~> Recover(f)

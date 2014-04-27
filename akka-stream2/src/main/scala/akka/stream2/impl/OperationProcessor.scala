@@ -2,7 +2,7 @@ package akka.stream2
 package impl
 
 import java.util.concurrent.atomic.AtomicReference
-import akka.actor.{ ActorRefFactory, Props }
+import akka.actor.{ PoisonPill, ActorRefFactory, Props }
 import org.reactivestreams.api.{ Consumer, Producer, Processor }
 import org.reactivestreams.spi
 import spi.{ Publisher, Subscription, Subscriber }
@@ -64,69 +64,83 @@ object OperationProcessor {
   }
 
   // Actor providing execution logic around an `OperationChain`
-  class Actor(op: OperationX) extends akka.actor.Actor with Downstream with Subscription with Context {
+  class Actor(op: OperationX) extends akka.actor.Actor with Subscription with Context {
+
+    // if both the outer upstream and outer downstream 
+    var upstreamCompleted = false
+    var downstreamCompleted = false
 
     def receive: Receive = {
-      case OnSubscribe(subscription) ⇒ context.become(waitingForDownstreamConnection(operationChain(subscription)))
+      case OnSubscribe(subscription) ⇒ context.become(waitingForDownstreamConnection(subscription))
       case Subscribe(subscriber)     ⇒ context.become(waitingForUpstreamConnection(subscriber))
     }
 
-    def waitingForDownstreamConnection(chain: OperationChain): Receive = {
-      case Subscribe(subscriber) ⇒ context.become(running(chain, subscriber))
+    def waitingForDownstreamConnection(subscription: Subscription): Receive = {
+      case Subscribe(subscriber) ⇒ context.become(running(subscription, subscriber))
     }
 
     def waitingForUpstreamConnection(subscriber: Subscriber[Any]): Receive = {
-      case OnSubscribe(subscription)  ⇒ context.become(running(operationChain(subscription), subscriber))
+      case OnSubscribe(subscription)  ⇒ context.become(running(subscription, subscriber))
       case Subscribe(otherSubscriber) ⇒ reject(otherSubscriber)
     }
 
-    def running(chain: OperationChain, subscriber: Subscriber[Any]): Receive = {
-      subscriber.onSubscribe(this);
+    def running(subscription: Subscription, subscriber: Subscriber[Any]): Receive = {
+      subscriber.onSubscribe(this)
+      val chain = new OperationChain(op, leftUpstream(subscription), rightDownstream(subscriber), this);
       {
-        // Subscriber side
         case OnNext(element)            ⇒ chain.leftDownstream.onNext(element)
-        case OnComplete                 ⇒ stopAfter(chain.leftDownstream.onComplete())
-        case OnError(e)                 ⇒ stopAfter(chain.leftDownstream.onError(e))
+        case OnComplete                 ⇒ markUpstreamCompleted(chain.leftDownstream.onComplete())
+        case OnError(e)                 ⇒ markUpstreamCompleted(chain.leftDownstream.onError(e))
 
-        // Publisher side
         case RequestMore(elements)      ⇒ chain.rightUpstream.requestMore(elements)
-        case Cancel                     ⇒ stopAfter(chain.rightUpstream.cancel())
+        case Cancel                     ⇒ markDownstreamCompleted(chain.rightUpstream.cancel())
         case Subscribe(otherSubscriber) ⇒ reject(otherSubscriber)
 
-        // other
         case Job(thunk)                 ⇒ thunk()
       }
     }
 
-    def operationChain(subscription: Subscription) = new OperationChain(op, subscription, this, this)
+    def leftUpstream(subscription: Subscription) =
+      new Upstream {
+        def requestMore(elements: Int) = subscription.requestMore(elements)
+        def cancel() = markUpstreamCompleted(subscription.cancel())
+      }
+
+    def rightDownstream(subscriber: Subscriber[Any]) =
+      new Downstream {
+        def onNext(element: Any) = subscriber.onNext(element)
+        def onError(cause: Throwable) = markDownstreamCompleted(subscriber.onError(cause))
+        def onComplete() = markDownstreamCompleted(subscriber.onComplete())
+      }
+
+    def markUpstreamCompleted(unit: Unit) =
+      if (downstreamCompleted) self ! PoisonPill
+      else upstreamCompleted = true
+
+    def markDownstreamCompleted(unit: Unit) =
+      if (upstreamCompleted) self ! PoisonPill
+      else downstreamCompleted = true
 
     def reject(subscriber: Subscriber[Any]): Unit =
       subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
 
-    def stopAfter(unit: Unit): Unit = context.stop(self)
-
-    // outside upstream interface facing downstream, called from another thread
+    // outside Subscription interface facing downstream, called from another thread
     def requestMore(elements: Int) = self ! RequestMore(elements)
     def cancel() = self ! Cancel
-
-    // outside downstream interface facing upstream, called from another thread
-    def onNext(element: Any) = self ! OnNext(element)
-    def onComplete() = self ! OnComplete
-    def onError(cause: Throwable) = self ! OnError(cause)
 
     // Context interface
     def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit =
       producer.getPublisher.subscribe {
         new Subscriber[T] {
-          def onSubscribe(subscription: spi.Subscription): Unit = schedule(subDownstream.subOnSubscribe(subscription))
-          def onNext(element: T): Unit = schedule(subDownstream.subOnNext(element))
-          def onComplete(): Unit = schedule(subDownstream.subOnComplete())
-          def onError(cause: Throwable): Unit = schedule(subDownstream.subOnError(cause))
+          def onSubscribe(subscription: Subscription) = schedule(subDownstream.subOnSubscribe(subscription))
+          def onNext(element: T) = schedule(subDownstream.subOnNext(element))
+          def onComplete() = schedule(subDownstream.subOnComplete())
+          def onError(cause: Throwable) = schedule(subDownstream.subOnError(cause))
         }
       }
     def requestSubDownstream(subUpstream: ⇒ SubUpstreamHandling): Producer[Any] with Downstream =
       new AtomicReference[Subscriber[Any]] with AbstractProducer[Any] with Subscription with Downstream {
-        def subscribe(subscriber: Subscriber[Any]): Unit =
+        def subscribe(subscriber: Subscriber[Any]) =
           if (compareAndSet(null, subscriber)) subscriber.onSubscribe(this)
           else subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
 

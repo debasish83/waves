@@ -57,7 +57,6 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
 
   class WaitingForSubstreamRequestMore(substream: Downstream, firstElement: Any,
                                        completeAfterFirstElement: Boolean) extends BehaviorWithSubUpstreamHandling {
-    println(s"MARK: $firstElement")
     override def requestMore(elements: Int): Unit = mainRequested += elements
     override def cancel(): Unit =
       if (!upstreamCompleted && upstreamError.isEmpty) {
@@ -73,7 +72,6 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
       downstream.onError(cause)
     }
     override def subRequestMore(elements: Int): Unit = {
-      println(s"MARK1: $firstElement")
       val behavior = new InSubstream(substream, elements)
       become(behavior)
       if (completeAfterFirstElement) behavior.onNextLast(firstElement)
@@ -96,7 +94,6 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
     override def requestMore(elements: Int): Unit = mainRequested += elements
     override def cancel(): Unit = downstreamCancelled = true
     def onNextAppend(element: Any): Unit = {
-      println(s"MARK2: $element")
       substream.onNext(element)
       subRequested -= 1
       if (upstreamCompleted) {
