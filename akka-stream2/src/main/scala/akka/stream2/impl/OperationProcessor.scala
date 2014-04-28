@@ -2,7 +2,7 @@ package akka.stream2
 package impl
 
 import java.util.concurrent.atomic.AtomicReference
-import akka.actor.{ PoisonPill, ActorRefFactory, Props }
+import akka.actor.{ ActorRefFactory, Props }
 import org.reactivestreams.api.{ Consumer, Producer, Processor }
 import org.reactivestreams.spi
 import spi.{ Publisher, Subscription, Subscriber }
@@ -12,8 +12,11 @@ class OperationProcessor[I, O](op: Operation[I, O])(implicit refFactory: ActorRe
   extends Processor[I, O] {
   import OperationProcessor._
 
-  private val actor =
-    refFactory.actorOf(Props(new OperationProcessor.Actor(op)))
+  private val actor = {
+    // TODO: make buffer setup configurable
+    val operationWithInputAndOutputBuffers = Operation.Buffer[I](4) ~> op ~> Operation.Buffer[O](4)
+    refFactory.actorOf(Props(new OperationProcessor.Actor(operationWithInputAndOutputBuffers)))
+  }
 
   val getSubscriber: Subscriber[I] =
     new Subscriber[I] {
@@ -21,6 +24,7 @@ class OperationProcessor[I, O](op: Operation[I, O])(implicit refFactory: ActorRe
       def onNext(element: I): Unit = actor ! OnNext(element)
       def onComplete(): Unit = actor ! OnComplete
       def onError(cause: Throwable): Unit = actor ! OnError(cause)
+      override def toString = s"ProcessorSubscriber($op)"
     }
 
   val getPublisher: Publisher[O] =
@@ -29,22 +33,24 @@ class OperationProcessor[I, O](op: Operation[I, O])(implicit refFactory: ActorRe
     }
 
   def produceTo(consumer: Consumer[O]): Unit = getPublisher.subscribe(consumer.getSubscriber)
+
+  override def toString = s"OperationProcessor($op)"
 }
 
 object OperationProcessor {
   // Subscriber-side messages
-  case class OnSubscribe(subscription: Subscription)
-  case class OnNext(element: Any) // TODO: remove this model and make it the default match
-  case object OnComplete
-  case class OnError(cause: Throwable)
+  private case class OnSubscribe(subscription: Subscription)
+  private case class OnNext(element: Any) // TODO: remove this model and make it the default match
+  private case object OnComplete
+  private case class OnError(cause: Throwable)
 
   // Publisher-side messages
-  case class Subscribe(subscriber: Subscriber[Any])
-  case class RequestMore(elements: Int)
-  case object Cancel
+  private case class Subscribe(subscriber: Subscriber[Any])
+  private case class RequestMore(elements: Int)
+  private case object Cancel
 
   // other messages
-  case class Job(thunk: () ⇒ Unit)
+  private case class Job(thunk: () ⇒ Unit)
 
   trait Context {
     def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit
@@ -64,65 +70,52 @@ object OperationProcessor {
   }
 
   // Actor providing execution logic around an `OperationChain`
-  class Actor(op: OperationX) extends akka.actor.Actor with Subscription with Context {
-
-    // if both the outer upstream and outer downstream 
-    var upstreamCompleted = false
-    var downstreamCompleted = false
+  private class Actor(op: OperationX) extends akka.actor.Actor with Subscription with Context {
+    val chain = new OperationChain(op, this)
 
     def receive: Receive = {
-      case OnSubscribe(subscription) ⇒ context.become(waitingForDownstreamConnection(subscription))
-      case Subscribe(subscriber)     ⇒ context.become(waitingForUpstreamConnection(subscriber))
+      case OnNext(element)           ⇒ chain.leftDownstream.onNext(element)
+      case OnComplete                ⇒ chain.leftDownstream.onComplete()
+      case OnError(e)                ⇒ chain.leftDownstream.onError(e)
+
+      case RequestMore(elements)     ⇒ chain.rightUpstream.requestMore(elements)
+      case Cancel                    ⇒ chain.rightUpstream.cancel()
+
+      case Job(thunk)                ⇒ thunk()
+
+      case OnSubscribe(subscription) ⇒ connectUpstream(subscription)
+      case Subscribe(subscriber)     ⇒ connectDownstream(subscriber)
     }
 
-    def waitingForDownstreamConnection(subscription: Subscription): Receive = {
-      case Subscribe(subscriber) ⇒ context.become(running(subscription, subscriber))
-    }
+    def connectUpstream(subscription: Subscription): Unit =
+      chain.connectUpstream {
+        new Upstream {
+          def requestMore(elements: Int) = subscription.requestMore(elements)
+          def cancel() = {
+            subscription.cancel()
+            if (chain.isDownstreamCompleted) context.stop(self)
+          }
+          override def toString = s"Upstream($subscription)"
+        }
+      }
 
-    def waitingForUpstreamConnection(subscriber: Subscriber[Any]): Receive = {
-      case OnSubscribe(subscription)  ⇒ context.become(running(subscription, subscriber))
-      case Subscribe(otherSubscriber) ⇒ reject(otherSubscriber)
-    }
-
-    def running(subscription: Subscription, subscriber: Subscriber[Any]): Receive = {
+    def connectDownstream(subscriber: Subscriber[Any]): Unit = {
+      chain.connectDownstream {
+        new Downstream {
+          def onNext(element: Any) = subscriber.onNext(element)
+          def onComplete() = {
+            subscriber.onComplete()
+            if (chain.isUpstreamCompleted) context.stop(self)
+          }
+          def onError(cause: Throwable) = {
+            subscriber.onError(cause)
+            if (chain.isUpstreamCompleted) context.stop(self)
+          }
+          override def toString = s"Downstream($subscriber)"
+        }
+      }
       subscriber.onSubscribe(this)
-      val chain = new OperationChain(op, leftUpstream(subscription), rightDownstream(subscriber), this);
-      {
-        case OnNext(element)            ⇒ chain.leftDownstream.onNext(element)
-        case OnComplete                 ⇒ markUpstreamCompleted(chain.leftDownstream.onComplete())
-        case OnError(e)                 ⇒ markUpstreamCompleted(chain.leftDownstream.onError(e))
-
-        case RequestMore(elements)      ⇒ chain.rightUpstream.requestMore(elements)
-        case Cancel                     ⇒ markDownstreamCompleted(chain.rightUpstream.cancel())
-        case Subscribe(otherSubscriber) ⇒ reject(otherSubscriber)
-
-        case Job(thunk)                 ⇒ thunk()
-      }
     }
-
-    def leftUpstream(subscription: Subscription) =
-      new Upstream {
-        def requestMore(elements: Int) = subscription.requestMore(elements)
-        def cancel() = markUpstreamCompleted(subscription.cancel())
-      }
-
-    def rightDownstream(subscriber: Subscriber[Any]) =
-      new Downstream {
-        def onNext(element: Any) = subscriber.onNext(element)
-        def onError(cause: Throwable) = markDownstreamCompleted(subscriber.onError(cause))
-        def onComplete() = markDownstreamCompleted(subscriber.onComplete())
-      }
-
-    def markUpstreamCompleted(unit: Unit) =
-      if (downstreamCompleted) self ! PoisonPill
-      else upstreamCompleted = true
-
-    def markDownstreamCompleted(unit: Unit) =
-      if (upstreamCompleted) self ! PoisonPill
-      else downstreamCompleted = true
-
-    def reject(subscriber: Subscriber[Any]): Unit =
-      subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
 
     // outside Subscription interface facing downstream, called from another thread
     def requestMore(elements: Int) = self ! RequestMore(elements)
@@ -136,6 +129,7 @@ object OperationProcessor {
           def onNext(element: T) = schedule(subDownstream.subOnNext(element))
           def onComplete() = schedule(subDownstream.subOnComplete())
           def onError(cause: Throwable) = schedule(subDownstream.subOnError(cause))
+          override def toString = s"SubUpstream($producer)"
         }
       }
     def requestSubDownstream(subUpstream: ⇒ SubUpstreamHandling): Producer[Any] with Downstream =
@@ -151,6 +145,7 @@ object OperationProcessor {
         // outside upstream interface facing downstream, called from another thread
         def requestMore(elements: Int) = schedule(subUpstream.subRequestMore(elements))
         def cancel() = schedule(subUpstream.subCancel())
+        override def toString = s"SubDownstream(${Option(get) getOrElse "<unsubscribed>"}"
       }
 
     // helpers

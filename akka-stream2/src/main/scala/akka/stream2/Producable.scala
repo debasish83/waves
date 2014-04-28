@@ -26,6 +26,9 @@ object Producable {
   implicit def forIterable[T] = new Producable[Iterable[T], T] {
     def apply(iterable: Iterable[T]) = StreamProducer(iterable)
   }
+  implicit def forOption[T] = new Producable[Option[T], T] {
+    def apply(option: Option[T]) = StreamProducer(option)
+  }
   implicit def forIterator[T] = new Producable[Iterator[T], T] {
     def apply(iterator: Iterator[T]) = StreamProducer(iterator)
   }

@@ -8,12 +8,12 @@ class FoldSpec extends OperationImplSpec {
 
   "`Fold` should" - {
 
-    "propagate requestMore" in test(op) { fixture ⇒
+    "propagate requestMore as requestMore(1)" in test(op) { fixture ⇒
       import fixture._
       requestMore(5)
-      expectRequestMore(5)
+      expectRequestMore(1)
       requestMore(2)
-      expectRequestMore(2)
+      expectRequestMore(1)
     }
 
     "propagate cancel" in test(op) { fixture ⇒

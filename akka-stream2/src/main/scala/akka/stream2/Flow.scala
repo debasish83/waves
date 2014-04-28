@@ -18,7 +18,7 @@ object Flow {
 
   def apply[T](producer: Producer[T]): Flow[T] = Unmapped(producer)
   def apply[T](future: Future[T])(implicit ec: ExecutionContext): Flow[T] = Unmapped(StreamProducer(future))
-  def apply[T](iterable: Iterable[T])(implicit ec: ExecutionContext): Flow[T] = apply(iterable.iterator)
+  def apply[T](iterable: Iterable[T])(implicit ec: ExecutionContext): Flow[T] = Unmapped(StreamProducer(iterable))
   def apply[T](iterator: Iterator[T])(implicit ec: ExecutionContext): Flow[T] = Unmapped(StreamProducer(iterator))
   def of[T](elements: T*)(implicit ec: ExecutionContext): Flow[T] = apply(elements)
 
@@ -34,7 +34,7 @@ object Flow {
     def toProducer(implicit refFactory: ActorRefFactory): Producer[A] =
       flow match {
         case Mapped(producer, op) ⇒
-          val processor = new OperationProcessor(op) // TODO: introduce implicit settings allowing for buffer size config
+          val processor = new OperationProcessor(op)
           producer.produceTo(processor)
           processor.asInstanceOf[Producer[A]]
         case Unmapped(producer) ⇒ producer

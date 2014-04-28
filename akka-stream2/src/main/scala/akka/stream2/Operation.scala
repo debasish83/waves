@@ -46,10 +46,14 @@ object Operation {
 
   final case class ~>[A, B, C](f: A ==> B, g: B ==> C) extends (A ==> C)
 
-  final case class Buffer[A, B, S](seed: S,
-                                   compress: (S, A) ⇒ S,
-                                   expand: S ⇒ (S, Option[B]),
-                                   canConsume: S ⇒ Boolean) extends (A ==> B)
+  final case class Buffer[T](size: Int) extends (T ==> T) {
+    require(size > 0, "size must be > 0")
+  }
+
+  final case class CustomBuffer[A, B, S](seed: S,
+                                         compress: (S, A) ⇒ S,
+                                         expand: S ⇒ (S, Option[B]),
+                                         canConsume: S ⇒ Boolean) extends (A ==> B)
 
   final case class Concat[T](next: () ⇒ Producer[T]) extends (T ==> T)
 

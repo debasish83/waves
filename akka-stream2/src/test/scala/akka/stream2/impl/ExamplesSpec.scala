@@ -1,4 +1,4 @@
-package org.reactivestreams.tck // TODO: move back out of this package once the visibility problems have been fixed
+package akka.stream2.impl
 
 import org.reactivestreams.api.Producer
 import org.scalatest.matchers.Matcher
@@ -22,6 +22,8 @@ class ExamplesSpec extends FreeSpec with Matchers with BeforeAndAfterAll {
 
     "a simple operations chain (example 1)" in {
       flow(1 to 4) should produce(1, 2, 3, 4)
+      Flow(flow(1 to 4).toProducer) should produce(1, 2, 3, 4)
+      Flow(flow(1 to 4).map(_ * 2).toProducer) should produce(2, 4, 6, 8)
       flow(1 to 20).filter(_ % 2 == 0) should produce(2, 4, 6, 8, 10, 12, 14, 16, 18, 20)
       flow(1 to 20).filter(_ % 2 == 0).map(_ * 3) should produce(6, 12, 18, 24, 30, 36, 42, 48, 54, 60)
       flow(1 to 20).filter(_ % 2 == 0).map(_ * 3).take(5) should produce(6, 12, 18, 24, 30)

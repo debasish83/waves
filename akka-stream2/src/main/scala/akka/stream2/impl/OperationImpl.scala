@@ -42,15 +42,15 @@ object OperationImpl {
     }
 
     class BehaviorWithSubDownstreamHandling extends Behavior with SubDownstreamHandling {
-      def subOnSubscribe(subUpstream: Upstream): Unit = throw new IllegalStateException(s"Unexpected `subOnSubscribe($subUpstream)`")
-      def subOnNext(element: Any): Unit = throw new IllegalStateException(s"Unexpected `subOnNext($element)`")
-      def subOnComplete(): Unit = throw new IllegalStateException("Unexpected `subOnComplete`")
-      def subOnError(cause: Throwable): Unit = throw new IllegalStateException(s"Unexpected `subOnError($cause)`")
+      def subOnSubscribe(subUpstream: Upstream): Unit = throw new IllegalStateException(s"Unexpected `subOnSubscribe($subUpstream)` in $this")
+      def subOnNext(element: Any): Unit = throw new IllegalStateException(s"Unexpected `subOnNext($element)` in $this")
+      def subOnComplete(): Unit = throw new IllegalStateException("Unexpected `subOnComplete` in $this")
+      def subOnError(cause: Throwable): Unit = throw new IllegalStateException(s"Unexpected `subOnError($cause)` in $this")
     }
 
     class BehaviorWithSubUpstreamHandling extends Behavior with SubUpstreamHandling {
-      def subRequestMore(elements: Int): Unit = throw new IllegalStateException(s"Unexpected `subRequestMore($elements)`")
-      def subCancel(): Unit = throw new IllegalStateException(s"Unexpected `subCancel()`")
+      def subRequestMore(elements: Int): Unit = throw new IllegalStateException(s"Unexpected `subRequestMore($elements)` in $this")
+      def subCancel(): Unit = throw new IllegalStateException(s"Unexpected `subCancel()` in $this")
     }
   }
 
@@ -58,22 +58,21 @@ object OperationImpl {
   def apply(op: OperationX)(implicit upstream: Upstream, downstream: Downstream,
                             ctx: OperationProcessor.Context): OperationImpl =
     op.asInstanceOf[Operation[Any, Any]] match {
-      case Concat(next)           ⇒ new ops.Concat(next)
-      case Buffer(seed, f, g, h)  ⇒ new ops.Buffer(seed, f, g, h)
-      case Drop(n)                ⇒ new ops.Drop(n)
-      case FanOutBox(fanOut, sec) ⇒ new ops.FanOutBox(fanOut.asInstanceOf[FanOut.Provider[FanOut]], sec.asInstanceOf[Producer[Any] ⇒ Unit])
-      case Filter(f)              ⇒ new ops.Filter(f)
-      case Fold(seed, f)          ⇒ new ops.Fold(seed, f)
-      case Map(f)                 ⇒ new ops.Map(f)
-      case Multiply(factor)       ⇒ new ops.Multiply(factor)
-      case OnEvent(callback)      ⇒ new ops.OnEvent(callback)
-      case Recover(f)             ⇒ new ops.Recover(f)
-      case Transform(transformer) ⇒ new ops.Transform(transformer)
-      case Split(f)               ⇒ new ops.Split(f)
-      case Take(n)                ⇒ new ops.Take(n)
-      case _ ⇒ op match {
-        // unfortunately, due to type inference issues, we don't seem to be able to add these to the main match directly
-        case ConcatAll() ⇒ new ops.ConcatAll()
-      }
+      case Buffer(size)                ⇒ new ops.Buffer(size)
+      case Concat(next)                ⇒ new ops.Concat(next)
+      case ConcatAll()                 ⇒ new ops.ConcatAll()
+      case CustomBuffer(seed, f, g, h) ⇒ new ops.CustomBuffer(seed, f, g, h)
+      case Drop(n)                     ⇒ new ops.Drop(n)
+      case FanInBox(sec, fanIn)        ⇒ new ops.FanInBox(sec, fanIn)
+      case FanOutBox(fanOut, sec)      ⇒ new ops.FanOutBox(fanOut.asInstanceOf[FanOut.Provider[FanOut]], sec.asInstanceOf[Producer[Any] ⇒ Unit])
+      case Filter(f)                   ⇒ new ops.Filter(f)
+      case Fold(seed, f)               ⇒ new ops.Fold(seed, f)
+      case Map(f)                      ⇒ new ops.Map(f)
+      case Multiply(factor)            ⇒ new ops.Multiply(factor)
+      case OnEvent(callback)           ⇒ new ops.OnEvent(callback)
+      case Recover(f)                  ⇒ new ops.Recover(f)
+      case Transform(transformer)      ⇒ new ops.Transform(transformer)
+      case Split(f)                    ⇒ new ops.Split(f)
+      case Take(n)                     ⇒ new ops.Take(n)
     }
 }

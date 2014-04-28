@@ -3,71 +3,56 @@ package ops
 
 import scala.annotation.tailrec
 
-class Buffer(seed: Any,
-             compress: (Any, Any) ⇒ Any,
-             expand: Any ⇒ (Any, Option[Any]),
-             canConsume: Any ⇒ Boolean)(implicit val upstream: Upstream, val downstream: Downstream)
+class Buffer(size: Int)(implicit val upstream: Upstream, val downstream: Downstream)
   extends OperationImpl.Abstract {
+  import Buffer._
 
+  val queue = new RingBuffer[Any](size)
   var requested = 0
-  var state = seed
-  var elementPendingFromUpstream = false
+  var pendingFromUpstream = 0
+
+  deliver()
 
   override def requestMore(elements: Int): Unit = {
     requested += elements
-    if (requested == elements) tryExpanding()
+    if (requested == elements) deliver()
   }
 
-  override def onNext(element: Any): Unit = {
-    elementPendingFromUpstream = false
-    state =
-      try compress(state, element)
-      catch {
-        case t: Throwable ⇒
-          downstream.onError(t)
-          upstream.cancel()
-          return
-      }
-    if (requested > 0) tryExpanding()
-    else requestOneFromUpstreamIfPossibleAndRequired()
+  override def onNext(element: Any) = {
+    pendingFromUpstream -= 1
+    enqueue(element)
   }
+  override def onComplete() = enqueue(Complete)
+  override def onError(cause: Throwable) = enqueue(Error(cause))
 
-  @tailrec private def tryExpanding(): Unit =
-    if (requested > 0) {
-      val expandResult =
-        try expand(state)
-        catch {
-          case t: Throwable ⇒
-            downstream.onError(t)
-            upstream.cancel()
-            return
-        }
-      expandResult match {
-        case (nextState, None) ⇒
-          state = nextState
-          requestOneFromUpstreamIfPossibleAndRequired()
-        case (nextState, Some(element)) ⇒
-          downstream.onNext(element)
-          requested -= 1
-          state = nextState
-          requestOneFromUpstreamIfPossibleAndRequired()
-          tryExpanding()
-      }
-    }
+  private def enqueue(value: Any): Unit =
+    if (queue.tryEnqueue(value))
+      deliver()
+    else throw new IllegalStateException
 
-  def requestOneFromUpstreamIfPossibleAndRequired(): Unit =
-    if (!elementPendingFromUpstream) {
-      val requestFromUpstream =
-        try canConsume(state)
-        catch {
-          case t: Throwable ⇒
-            downstream.onError(t)
-            upstream.cancel()
-            return
-        }
-      if (requestFromUpstream) {
-        elementPendingFromUpstream = true
-        upstream.requestMore(1)
+  @tailrec
+  private def deliver(): Unit =
+    if (queue.isEmpty) {
+      if (pendingFromUpstream == 0) {
+        // strategy: we only request from upstream if the queue is empty and there are no elements pending anymore,
+        // so we trade off a little bit of latency (once every size elements)
+        // against higher throughput through fewer requestMore calls
+        pendingFromUpstream = size - 1 // we need to keep one slot available for a potential `Complete` or `Error` event
+        upstream.requestMore(pendingFromUpstream)
       }
+    } else queue.peek match {
+      case Complete     ⇒ downstream.onComplete()
+      case Error(cause) ⇒ downstream.onError(cause)
+      case element if requested > 0 ⇒
+        queue.drop()
+        downstream.onNext(element)
+        requested -= 1
+        deliver()
+      case _ ⇒ // wait for requestMore
     }
+}
+
+object Buffer {
+  private case object Complete
+  private final case class Error(cause: Throwable)
 }

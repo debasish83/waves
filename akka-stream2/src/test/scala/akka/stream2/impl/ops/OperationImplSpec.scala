@@ -41,8 +41,11 @@ abstract class OperationImplSpec extends FreeSpec with Matchers {
     def operation: Operation[A, B]
 
     private[OperationImplSpec] var verifiedForCleanExit = Seq.empty[Either[MockUpstream, MockDownstream]]
-    private val chain = new OperationChain(operation, upstream, downstream, processorContext)
+    private val chain = new OperationChain(operation, processorContext)
     private var requestSubUpstreamCalls = Seq.empty[(Producer[_ <: Any], () ⇒ SubDownstreamHandling)]
+
+    chain.connectUpstream(upstream)
+    chain.connectDownstream(downstream)
 
     private def processorContext: OperationProcessor.Context =
       new OperationProcessor.Context {

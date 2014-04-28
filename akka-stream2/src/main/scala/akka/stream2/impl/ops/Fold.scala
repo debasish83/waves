@@ -6,6 +6,8 @@ class Fold(seed: Any, f: (Any, Any) ⇒ Any)(implicit val upstream: Upstream, va
 
   var acc = seed
 
+  override def requestMore(elements: Int) = upstream.requestMore(1)
+
   override def onNext(element: Any): Unit = {
     acc =
       try f(acc, element)

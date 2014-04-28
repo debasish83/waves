@@ -14,15 +14,16 @@ trait OperationApi[A] extends Any {
 
   def ~>[B](next: A ==> B): Res[B]
 
+  // appends a simple buffer element which eagerly requests from upstream and
+  // dispatches to downstream up to the given max buffer size
+  def buffer(size: Int): Res[A] = {
+    require(Integer.lowestOneBit(size) == size, "size must be a power of 2")
+    this ~> Buffer(size)
+  }
+
   // appends the given flow to the end of this stream
   def concat(next: ⇒ Producer[A]): Res[A] =
     this ~> Concat(next _)
-
-  // adds (bounded or unbounded) pressure elasticity
-  // consumes at max rate as long as `canConsume` is true,
-  // produces no faster than the rate with which `expand` produces B values
-  def buffer[B, S](seed: S)(compress: (S, A) ⇒ S)(expand: S ⇒ (S, Option[B]))(canConsume: S ⇒ Boolean): Res[B] =
-    this ~> Buffer(seed, compress, expand, canConsume)
 
   // filters the stream with a partial function and maps to its results
   def collect[B](pf: PartialFunction[A, B]): Res[B] =
@@ -48,7 +49,7 @@ trait OperationApi[A] extends Any {
   // "compresses" a fast upstream by keeping one element buffered and reducing surplus values using the given function
   // consumes at max rate, produces no faster than the upstream
   def compress[B](seed: B)(f: (B, A) ⇒ B): Res[B] =
-    this ~> Buffer[A, B, Either[B, B]]( // Left(c) = we need to request from upstream first, Right(c) = we can dispatch to downstream
+    this ~> CustomBuffer[A, B, Either[B, B]]( // Left(c) = we need to request from upstream first, Right(c) = we can dispatch to downstream
       seed = Left(seed),
       compress = (either, a) ⇒ Right(f(either match {
         case Left(x)  ⇒ x
@@ -59,6 +60,12 @@ trait OperationApi[A] extends Any {
         case Right(b)    ⇒ (Left(b), Some(b))
       },
       canConsume = _ ⇒ true)
+
+  // adds (bounded or unbounded) pressure elasticity
+  // consumes at max rate as long as `canConsume` is true,
+  // produces no faster than the rate with which `expand` produces B values
+  def customBuffer[B, S](seed: S)(compress: (S, A) ⇒ S)(expand: S ⇒ (S, Option[B]))(canConsume: S ⇒ Boolean): Res[B] =
+    this ~> CustomBuffer(seed, compress, expand, canConsume)
 
   // drops the first n upstream values
   // consumes the first n upstream values at max rate, afterwards directly copies upstream
@@ -72,7 +79,7 @@ trait OperationApi[A] extends Any {
   // "expands" a slow upstream by buffering the last upstream element and producing it whenever requested
   // consumes at max rate, produces at max rate once the first upstream value has been buffered
   def expand[S](seed: S)(produce: S ⇒ (S, A)): Res[A] =
-    this ~> Buffer[A, A, Option[A]](
+    this ~> CustomBuffer[A, A, Option[A]](
       seed = None,
       compress = (_, x) ⇒ Some(x),
       expand = s ⇒ (s, s),
@@ -112,7 +119,9 @@ trait OperationApi[A] extends Any {
   // only available if the stream elements are themselves producable as a Producer[B]
   def headAndTail[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory, ec: ExecutionContext): Res[(B, Producer[B])] = {
     def headTail: A ⇒ Producer[(B, Producer[B])] = {
-      case Producable(FanOut.Tee(p1, p2)) ⇒ Flow(p1).headStream.map(_ -> Flow(p2).tail.toProducer).toProducer
+      case Producable(FanOut.Tee(p1, p2)) ⇒
+        val tailStream = Flow(p2).tail.toProducer
+        Flow(p1).headStream.map(_ -> tailStream).toProducer
     }
     this ~> (Map(headTail) ~> ConcatAll[Producer[(B, Producer[B])], (B, Producer[B])])
   }

@@ -31,10 +31,7 @@ object FanOut {
       val processor = new OperationProcessor(op)
       upstream.produceTo(processor)
       val secondaryProducer = new AbstractProducer[F[I]#O2] {
-        def subscribe(subscriber: Subscriber[F[I]#O2]) = {
-          println("MARK2")
-          promise.future.foreach(_.getPublisher.subscribe(subscriber))
-        }
+        def subscribe(subscriber: Subscriber[F[I]#O2]) = promise.future.foreach(_.getPublisher.subscribe(subscriber))
       }
       Some(processor.asInstanceOf[Producer[F[I]#O1]] -> secondaryProducer)
     }
@@ -98,13 +95,13 @@ object FanOut {
       if (cancelled1) {
         if (requested2 > 0) {
           val r = requested2
-          requested2 -= r
+          requested2 = 0
           upstream.requestMore(r)
         }
       } else if (cancelled2) {
         if (requested1 > 0) {
           val r = requested1
-          requested1 -= r
+          requested1 = 0
           upstream.requestMore(r)
         }
       } else {

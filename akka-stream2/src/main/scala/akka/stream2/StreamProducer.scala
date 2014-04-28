@@ -4,7 +4,7 @@
 
 package akka.stream2
 
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.annotation.tailrec
 import scala.util.control.NonFatal
 import scala.concurrent.{ ExecutionContext, Future }
@@ -41,6 +41,11 @@ object StreamProducer {
   def apply[T](iterable: Iterable[T]): Producer[T] = ForIterable(iterable)
 
   /**
+   * Shortcut for constructing an `ForIterable`.
+   */
+  def apply[T](option: Option[T]): Producer[T] = if (option.isEmpty) empty else ForIterable(option.get :: Nil)
+
+  /**
    * A producer supporting unlimited subscribers which all receive independent subscriptions which
    * efficiently produce the elements of the given Iterable synchronously in `subscription.requestMore`.
    * Provides value equality.
@@ -59,23 +64,25 @@ object StreamProducer {
    * than merely retrieve an element in their `next()` method!
    */
   def apply[T](iterator: Iterator[T]): Producer[T] =
-    new AtomicReference[Subscriber[T]] with AbstractProducer[T] {
+    new AtomicBoolean with AbstractProducer[T] {
       def subscribe(subscriber: Subscriber[T]) =
-        if (compareAndSet(null, subscriber)) {
+        if (compareAndSet(false, true)) {
           subscriber.onSubscribe(new IteratorSubscription(iterator, subscriber))
         } else subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
+      override def toString = s"IteratorProducer($iterator)"
     }
 
   private class IteratorSubscription[T](iterator: Iterator[T], subscriber: Subscriber[T]) extends Subscription {
-    @volatile var cancelled = false
+    @volatile var completed = false
     @tailrec final def requestMore(elements: Int) =
-      if (!cancelled && elements > 0) {
+      if (!completed && elements > 0) {
         val recurse =
           try {
             if (iterator.hasNext) {
               subscriber.onNext(iterator.next())
               true
             } else {
+              completed = true
               subscriber.onComplete()
               false
             }
@@ -86,7 +93,7 @@ object StreamProducer {
           }
         if (recurse) requestMore(elements - 1)
       }
-    def cancel() = cancelled = true
+    def cancel() = completed = true
   }
 
   /**
@@ -99,21 +106,22 @@ object StreamProducer {
     new AbstractProducer[T] {
       def subscribe(subscriber: Subscriber[T]) =
         subscriber.onSubscribe {
-          new Subscription {
-            @volatile var cancelled = false
-            def requestMore(elements: Int) =
-              if (!cancelled)
+          new AtomicBoolean with Subscription {
+            def requestMore(elements: Int) = {
+              if (!get) // optimization: skip action if we already completed (not needed for correctness)
                 if (future.isCompleted) dispatch(future.value.get)
                 else future.onComplete(dispatch)
-            def cancel() = cancelled = true
+            }
+            def cancel() = set(true)
             def dispatch(value: Try[T]): Unit =
-              if (!cancelled)
+              if (compareAndSet(false, true))
                 value match {
                   case Success(x) ⇒
                     subscriber.onNext(x)
                     subscriber.onComplete()
                   case Failure(error) ⇒ subscriber.onError(error)
                 }
+            override def toString = s"FutureProducer($future)"
           }
         }
     }
