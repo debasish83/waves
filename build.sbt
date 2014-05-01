@@ -4,8 +4,8 @@ import scalariform.formatter.preferences._
 val commonSettings = Seq(
   version := "0.1-SNAPSHOT",
   scalaVersion := "2.11.0",
-  organization := "io.swave",
-  homepage := Some(new URL("http://swave.io")),
+  organization := "io.waves",
+  homepage := Some(new URL("http://waves.io")),
   description := "A reactive streams implementation in Scala",
   startYear := Some(2014),
   licenses := Seq("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt")),
@@ -45,8 +45,8 @@ val publishingSettings = Seq(
   pomIncludeRepository := { _ => false },
   pomExtra :=
     <scm>
-      <url>git@github.com:sirthias/swave.git</url>
-      <connection>scm:git:git@github.com:sirthias/swave.git</connection>
+      <url>git@github.com:sirthias/waves.git</url>
+      <connection>scm:git:git@github.com:sirthias/waves.git</connection>
     </scm>
     <developers>
       <developer>
@@ -65,14 +65,14 @@ val specs2                 = "org.specs2" %% "specs2-core" % "2.3.11" % "test"
 /////////////////////// PROJECTS /////////////////////////
 
 lazy val examples = project
-  .dependsOn(swave)
+  .dependsOn(waves)
   .settings(commonSettings: _*)
   .settings(cappiSettings: _*)
   .settings(
     publishTo := None
   )
 
-lazy val swave = project
+lazy val waves = project
   .settings(commonSettings: _*)
   .settings(formattingSettings: _*)
   .settings(publishingSettings: _*)
