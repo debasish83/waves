@@ -1,0 +1,37 @@
+### GENERAL
+*.class
+*.log
+
+### SBT
+project/boot/
+project/plugins/project/
+lib_managed/
+src_managed/
+test-output/
+target/
+.history/
+.cache/
+.lib/
+dist/*
+
+# IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Eclipse
+.cache
+.classpath
+.project
+.scala_dependencies
+.settings
+.target/
+.worksheet
+
+# Mac
+.DS_Store
+
+# Other
+*.pyc
