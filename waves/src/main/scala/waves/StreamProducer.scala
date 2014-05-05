@@ -43,14 +43,18 @@ object StreamProducer {
   }
 
   /**
-   * Shortcut for constructing an `ForIterable`.
+   * Shortcut for constructing a `ForIterable`.
    */
-  def of[T](elements: T*): Producer[T] = apply(elements)
+  def of[T](elements: T*): Producer[T] = if (elements.isEmpty) empty else apply(elements)
 
   /**
-   * Shortcut for constructing an `ForIterable`.
+   * Shortcut for constructing a `ForIterable`.
    */
-  def apply[T](iterable: Iterable[T]): Producer[T] = ForIterable(iterable)
+  def apply[T](iterable: Iterable[T]): Producer[T] =
+    iterable match {
+      case x: Seq[_] if x.isEmpty ⇒ empty[T]
+      case _                      ⇒ ForIterable(iterable)
+    }
 
   /**
    * Shortcut for constructing an `ForIterable`.

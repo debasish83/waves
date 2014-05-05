@@ -30,6 +30,7 @@ class OperationProcessor[I, O](op: Operation[I, O])(implicit refFactory: ActorRe
 
   private val actor = {
     // TODO: make buffer setup configurable
+    // TODO: add idle timeout shutdown
     val operationWithInputAndOutputBuffers = Operation.Buffer[I](4) ~> op ~> Operation.Buffer[O](4)
     refFactory.actorOf(Props(new OperationProcessor.Actor(operationWithInputAndOutputBuffers)))
   }

@@ -18,7 +18,6 @@ package waves
 
 import scala.language.{ higherKinds, implicitConversions }
 import scala.concurrent.ExecutionContext
-import scala.collection.immutable
 import org.reactivestreams.api.{ Producer, Consumer, Processor }
 import akka.actor.ActorRefFactory
 import waves.impl.OperationProcessor
@@ -113,7 +112,7 @@ object Operation {
 
   final case class OuterMap[A, B](f: Producer[A] ⇒ Producer[B]) extends (A ==> B)
 
-  final case class Recover[A, B <: A](f: Throwable ⇒ Seq[B]) extends (A ==> B)
+  final case class Recover[A, B <: A](pf: PartialFunction[Throwable, Producer[B]]) extends (A ==> B)
 
   final case class Split[T](f: T ⇒ Split.Command) extends (T ==> Producer[T])
   object Split {
@@ -142,7 +141,7 @@ object Operation {
   trait Transformer[-A, +B] {
     def onNext(elem: A): Seq[B]
     def isComplete: Boolean = false
-    def onComplete: immutable.Seq[B] = Nil
+    def onComplete: Seq[B] = Nil
     def cleanup(): Unit = ()
   }
 }

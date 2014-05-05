@@ -17,40 +17,60 @@
 package waves.impl
 package ops
 
-import scala.annotation.tailrec
 import scala.util.control.NonFatal
+import org.reactivestreams.api.Producer
+import OperationProcessor.SubDownstreamHandling
 
-class Recover(f: Throwable ⇒ Seq[Any])(implicit val upstream: Upstream, val downstream: Downstream)
-    extends OperationImpl.Abstract {
+class Recover(pf: PartialFunction[Throwable, Producer[Any]])(implicit val upstream: Upstream,
+                                                             val downstream: Downstream,
+                                                             ctx: OperationProcessor.Context)
+    extends OperationImpl.Stateful with (Throwable ⇒ Nothing) {
 
-  var requested = 0
-  var errorOutput: List[Any] = _
+  def apply(error: Throwable): Nothing = throw error
 
-  override def requestMore(elements: Int): Unit = {
-    requested += elements
-    if (errorOutput eq null) upstream.requestMore(requested)
-    else if (requested == elements) drainErrorOutput()
-  }
-
-  override def onNext(element: Any): Unit = {
-    downstream.onNext(element)
-    requested -= 1
-  }
-
-  override def onError(cause: Throwable): Unit =
-    try {
-      errorOutput = f(cause).toList
-      drainErrorOutput()
-    } catch {
-      case NonFatal(e) ⇒ downstream.onError(e)
+  def initialBehavior: Behavior =
+    new Behavior {
+      var requested = 0
+      override def requestMore(elements: Int): Unit = {
+        requested += elements
+        upstream.requestMore(elements)
+      }
+      override def onNext(element: Any) = {
+        requested -= 1
+        downstream.onNext(element)
+      }
+      override def onError(cause: Throwable): Unit = {
+        become(new WaitingForSecondFlowSubscription(requested))
+        try {
+          val producer = pf.applyOrElse(cause, Recover.this)
+          ctx.requestSubUpstream(producer, behavior.asInstanceOf[SubDownstreamHandling])
+        } catch {
+          case NonFatal(e) ⇒ downstream.onError(e)
+        }
+      }
     }
 
-  @tailrec private def drainErrorOutput(): Unit =
-    if (errorOutput.isEmpty) downstream.onComplete()
-    else if (requested > 0) {
-      downstream.onNext(errorOutput.head)
-      requested -= 1
-      errorOutput = errorOutput.tail
-      drainErrorOutput()
-    } // else wait for requestMore
+  class WaitingForSecondFlowSubscription(var requested: Int) extends BehaviorWithSubDownstreamHandling {
+    var cancelled = false
+    override def requestMore(elements: Int) = requested += elements
+    override def cancel() = cancelled = true
+    override def subOnSubscribe(upstream2: Upstream) =
+      if (cancelled) {
+        upstream2.cancel()
+      } else {
+        become(new Draining(upstream2))
+        upstream2.requestMore(requested)
+      }
+    override def subOnComplete() = downstream.onComplete()
+    override def subOnError(cause: Throwable) = downstream.onError(cause)
+  }
+
+  // when we enter this state we have already requested all so far requested elements from upstream2
+  class Draining(upstream2: Upstream) extends BehaviorWithSubDownstreamHandling {
+    override def requestMore(elements: Int) = upstream2.requestMore(elements)
+    override def cancel() = upstream2.cancel()
+    override def subOnNext(element: Any) = downstream.onNext(element)
+    override def subOnComplete() = downstream.onComplete()
+    override def subOnError(cause: Throwable) = downstream.onError(cause)
+  }
 }

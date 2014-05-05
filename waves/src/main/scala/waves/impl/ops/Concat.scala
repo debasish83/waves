@@ -17,6 +17,7 @@
 package waves.impl
 package ops
 
+import scala.util.control.NonFatal
 import org.reactivestreams.api.Producer
 import OperationProcessor.SubDownstreamHandling
 
@@ -37,7 +38,12 @@ class Concat(next: () ⇒ Producer[Any])(implicit val upstream: Upstream, val do
       }
       override def onComplete(): Unit = {
         become(new WaitingForSecondFlowSubscription(requested))
-        ctx.requestSubUpstream(next(), behavior.asInstanceOf[SubDownstreamHandling])
+        try {
+          val producer = next()
+          ctx.requestSubUpstream(producer, behavior.asInstanceOf[SubDownstreamHandling])
+        } catch {
+          case NonFatal(e) ⇒ downstream.onError(e)
+        }
       }
     }
 

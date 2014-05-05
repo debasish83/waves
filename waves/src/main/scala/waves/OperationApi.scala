@@ -17,6 +17,7 @@
 package waves
 
 import scala.language.{ higherKinds, implicitConversions }
+import scala.util.control.NonFatal
 import scala.util.{ Failure, Success, Try }
 import scala.concurrent.ExecutionContext
 import org.reactivestreams.api.{ Consumer, Producer }
@@ -58,7 +59,7 @@ trait OperationApi[A] extends Any {
 
   // alternative `concatAll` implementation
   def concatAll2[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory, ec: ExecutionContext): Res[B] =
-    this ~> OuterMap[A, B] {
+    outerMap[B] {
       case Producable(FanOut.Tee(p1, p2)) ⇒ Flow(p1).head.concat(Flow(p2).tail.concatAll2.toProducer).toProducer
     }
 
@@ -218,7 +219,8 @@ trait OperationApi[A] extends Any {
   def printEvent(marker: String): Res[A] = onEvent(ev ⇒ println(s"$marker: $ev"))
 
   // lifts errors from upstream back into the main data flow before completing normally
-  def recover[B <: A](f: Throwable ⇒ Seq[B]): Res[B] = this ~> Recover(f)
+  def recover[B <: A, P](pf: PartialFunction[Throwable, P])(implicit ev: Producable[P, B]): Res[B] =
+    this ~> Recover(pf andThen ev)
 
   // general stream transformation
   def transform[B](transformer: Transformer[A, B]): Res[B] =
@@ -226,7 +228,9 @@ trait OperationApi[A] extends Any {
 
   // lifts regular data and errors from upstream into a Try
   def tryRecover: Res[Try[A]] =
-    this ~> (Map[A, Try[A]](Success(_)) ~> Recover[Try[A], Try[A]](t ⇒ Failure(t) :: Nil))
+    this ~> (Map[A, Try[A]](Success(_)) ~> Recover[Try[A], Try[A]] {
+      case NonFatal(e) ⇒ StreamProducer(Failure(e) :: Nil)
+    })
 
   // splits the upstream into sub-streams based on the commands produced by the given function,
   // never produces empty sub-streams
