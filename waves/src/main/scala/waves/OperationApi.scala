@@ -53,6 +53,20 @@ trait OperationApi[A] extends Any {
       }
     }
 
+  // completes the stream (and cancels the upstream) after the first element for
+  // which the given function returns true
+  def completeAfter(f: A ⇒ Boolean): Res[A] =
+    transform {
+      new Transformer[A, A] {
+        private[this] var complete = false
+        override def isComplete = complete
+        def onNext(elem: A) = {
+          complete = f(elem)
+          elem :: Nil
+        }
+      }
+    }
+
   // flattens the upstream by concatenation
   // only available if the stream elements are themselves producable as a Producer[B]
   def concatAll[B](implicit ev: Producable[A, B]): Res[B] = this ~> ConcatAll[A, B]
