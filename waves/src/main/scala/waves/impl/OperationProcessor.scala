@@ -88,7 +88,9 @@ object OperationProcessor {
   private class Actor(op: OperationX)(implicit ec: ExecutionContext) extends SimpleActor with Subscription with Context {
     val chain = new OperationChain(op, this)
 
-    val receive: Receive = {
+    startMessageProcessing()
+
+    def apply(msg: AnyRef): Unit = msg match {
       case OnNext(element)           ⇒ chain.leftDownstream.onNext(element)
       case OnComplete                ⇒ chain.leftDownstream.onComplete()
       case OnError(e)                ⇒ chain.leftDownstream.onError(e)

@@ -20,42 +20,48 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
+import scala.annotation.tailrec
 
 /**
  * Minimalistic actor implementation without `become`.
  *
  * The atomic boolean value signals whether we are currently running or scheduled to run
- * on the given ExecutionContext.
+ * on the given ExecutionContext. We start out with a value of `true` to protect ourselves
+ * from starting mailbox processing before the object has been fully initialized.
  */
-abstract class SimpleActor(implicit ec: ExecutionContext) extends AtomicBoolean with Runnable {
-  type Receive = Any ⇒ Unit
+private[impl] abstract class SimpleActor(implicit ec: ExecutionContext) extends AtomicBoolean(true)
+    with (AnyRef ⇒ Unit) with Runnable {
+  private val Throughput = 5 // TODO: make configurable
 
   // TODO: if we can guarantee boundedness of the mailbox use optimized ringbuffer-based implementation
   // otherwise upgrade to "Gidenstam, Sundell and Tsigas"-like impl, e.g. ConcurrentArrayQueue from Jetty 9
-  private[this] val mailbox = new ConcurrentLinkedQueue[Any]
+  private[this] val mailbox = new ConcurrentLinkedQueue[AnyRef]
 
-  val receive: Receive
-
-  def !(msg: Any): Unit = {
+  def !(msg: AnyRef): Unit = {
     mailbox.offer(msg)
-    schedule()
+    scheduleIfPossible()
   }
 
   final def run(): Unit =
     try {
-      if (get) // memory barrier and protection against semi-failed schedulings (exception from `ec.execute(this)`)
-        receive(mailbox.poll())
+      @tailrec def processMailbox(maxRemainingMessages: Int): Unit =
+        if (maxRemainingMessages > 0) {
+          val nextMsg = mailbox.poll()
+          if (nextMsg ne null) {
+            apply(nextMsg)
+            processMailbox(maxRemainingMessages - 1)
+          }
+        }
+      processMailbox(Throughput)
     } catch {
       case NonFatal(e) ⇒ // TODO: remove this debugging helper once we are stable
-        println(s"ERROR in SimpleActor::receive: " + e)
+        print(s"ERROR in SimpleActor::apply: ")
         e.printStackTrace()
     } finally {
-      set(false)
-      if (!mailbox.isEmpty)
-        schedule()
+      startMessageProcessing()
     }
 
-  private def schedule(): Unit =
+  private def scheduleIfPossible(): Unit =
     if (compareAndSet(false, true)) {
       try ec.execute(this)
       catch {
@@ -64,4 +70,11 @@ abstract class SimpleActor(implicit ec: ExecutionContext) extends AtomicBoolean 
           throw e
       }
     }
+
+  // must be called at the end of the outermost constructor to 
+  protected def startMessageProcessing(): Unit = {
+    set(false)
+    if (!mailbox.isEmpty)
+      scheduleIfPossible()
+  }
 }
