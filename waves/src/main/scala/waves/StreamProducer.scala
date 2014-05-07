@@ -23,6 +23,7 @@ import scala.concurrent.{ ExecutionContext, Future }
 import org.reactivestreams.spi.{ Subscription, Subscriber }
 import org.reactivestreams.api.Producer
 import scala.util.{ Failure, Success, Try }
+import waves.impl.AbstractProducer
 
 object StreamProducer {
 

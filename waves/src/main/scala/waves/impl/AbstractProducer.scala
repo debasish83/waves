@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package waves
+package waves.impl
 
 import org.reactivestreams.api.{ Consumer, Producer }
 import org.reactivestreams.spi.Publisher
