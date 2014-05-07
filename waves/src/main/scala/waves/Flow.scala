@@ -22,7 +22,6 @@ import scala.concurrent.{ Promise, ExecutionContext, Future }
 import scala.collection.immutable.VectorBuilder
 import scala.collection.immutable
 import org.reactivestreams.api.{ Consumer, Producer }
-import akka.actor.ActorRefFactory
 import waves.impl.OperationProcessor
 
 sealed trait Flow[+A] {
@@ -47,7 +46,7 @@ object Flow {
 
     def append[B](next: A ==> B): Flow[B] = flow ~> next
 
-    def toProducer(implicit refFactory: ActorRefFactory): Producer[A] =
+    def toProducer(implicit ec: ExecutionContext): Producer[A] =
       flow match {
         case Mapped(producer, op) ⇒
           val processor = new OperationProcessor(op)
@@ -56,22 +55,22 @@ object Flow {
         case Unmapped(producer) ⇒ producer
       }
 
-    def produceTo(consumer: Consumer[A])(implicit refFactory: ActorRefFactory): Unit =
+    def produceTo(consumer: Consumer[A])(implicit ec: ExecutionContext): Unit =
       toProducer.produceTo(consumer)
 
     // returns a future on the first stream element
-    def headFuture(implicit refFactory: ActorRefFactory, ec: ExecutionContext): Future[A] = {
+    def headFuture(implicit ec: ExecutionContext): Future[A] = {
       val promise = Promise[A]()
       produceTo(StreamConsumer.headFuture(promise))
       promise.future
     }
 
     // drains the stream into the given callback
-    def drain(callback: A ⇒ Unit)(implicit refFactory: ActorRefFactory, ec: ExecutionContext): Unit =
+    def drain(callback: A ⇒ Unit)(implicit ec: ExecutionContext): Unit =
       onElement(callback) produceTo StreamConsumer.blackHole[A]
 
     // drains the stream into a Seq
-    def drainToSeq(implicit refFactory: ActorRefFactory, ec: ExecutionContext): Future[immutable.Seq[A]] =
+    def drainToSeq(implicit ec: ExecutionContext): Future[immutable.Seq[A]] =
       fold(new VectorBuilder[A])(_ += _).map(_.result()).headFuture
   }
 

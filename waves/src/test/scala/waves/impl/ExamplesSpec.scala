@@ -17,22 +17,16 @@
 package waves.impl
 
 import org.reactivestreams.api.Producer
-import com.typesafe.config.{ Config, ConfigFactory }
 import scala.concurrent.duration._
 import scala.concurrent.Await
 import org.specs2.mutable.Specification
 import org.specs2.time.NoTimeConversions
 import org.specs2.matcher.Matcher
-import akka.actor.ActorSystem
 import waves.Operation.Split
 import waves.Flow
 
 class ExamplesSpec extends Specification with NoTimeConversions {
-  val testConf: Config = ConfigFactory.parseString("""
-    akka.event-handlers = ["akka.testkit.TestEventListener"]
-    akka.loglevel = WARNING""")
-  implicit val system = ActorSystem(getClass.getSimpleName, testConf)
-  import system.dispatcher
+  import scala.concurrent.ExecutionContext.Implicits.global
 
   "The OperationImpl infrastructure must properly execute" >> {
 
@@ -84,8 +78,6 @@ class ExamplesSpec extends Specification with NoTimeConversions {
       flow(1 to 10).op(splitAt4).op(substreamsToString) must produce("123", "4567", "8910")
     }
   }
-
-  step(system.shutdown())
 
   ///////////////////////////////////////////////////////////
 

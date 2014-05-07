@@ -2,7 +2,7 @@ import com.typesafe.sbt.SbtScalariform.ScalariformKeys
 import scalariform.formatter.preferences._
 
 val commonSettings = Seq(
-  version := "0.1-SNAPSHOT",
+  version := "0.2-SNAPSHOT",
   scalaVersion := "2.11.0",
   organization := "io.waves",
   homepage := Some(new URL("http://waves.io")),
@@ -61,7 +61,6 @@ val noPublishingSettings = Seq(
 
 /////////////////////// DEPENDENCIES /////////////////////////
 
-val `akka-actor`           = "com.typesafe.akka"    %% "akka-actor"  % "2.3.2"  % "compile"
 val `reactive-streams`     = "org.reactivestreams"       % "reactive-streams-spi"         % "0.3"
 val `reactive-streams-tck` = "org.reactivestreams"      % "reactive-streams-tck"         % "0.3"              % "test"
 val specs2                 = "org.specs2" %% "specs2-core" % "2.3.11" % "test"
@@ -83,5 +82,5 @@ lazy val waves = project
   .settings(formattingSettings: _*)
   .settings(publishingSettings: _*)
   .settings(
-    libraryDependencies ++= Seq(`akka-actor`, `reactive-streams`, `reactive-streams-tck`, specs2)
+    libraryDependencies ++= Seq(`reactive-streams`, `reactive-streams-tck`, specs2)
   )

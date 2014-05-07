@@ -21,7 +21,6 @@ import scala.language.higherKinds
 import org.reactivestreams.api.Producer
 import org.reactivestreams.spi.Subscriber
 import scala.concurrent.{ ExecutionContext, Promise }
-import akka.actor.ActorRefFactory
 import waves.impl._
 
 trait FanOut[T] {
@@ -41,7 +40,7 @@ object FanOut {
   abstract class Provider[F[_] <: FanOut[_]] {
     def apply(upstream: Upstream, primaryDownstream: Downstream, secondaryDownstream: Downstream): F[Any]
 
-    def unapply[I](upstream: Producer[I])(implicit refFactory: ActorRefFactory, ec: ExecutionContext): Option[(Producer[F[I]#O1], Producer[F[I]#O2])] = {
+    def unapply[I](upstream: Producer[I])(implicit ec: ExecutionContext): Option[(Producer[F[I]#O1], Producer[F[I]#O2])] = {
       val promise = Promise[Producer[F[I]#O2]]()
       val op = Operation.FanOutBox[I, F](this, promise.success)
       val processor = new OperationProcessor(op)

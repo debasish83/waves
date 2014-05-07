@@ -17,22 +17,20 @@
 package waves
 package impl
 
+import scala.concurrent.ExecutionContext
 import java.util.concurrent.atomic.AtomicReference
-import akka.actor.{ ActorRefFactory, Props }
 import org.reactivestreams.api.{ Consumer, Producer, Processor }
 import org.reactivestreams.spi
 import spi.{ Publisher, Subscription, Subscriber }
 
-// Processor interface around an `OperationProcessor.Actor`
-class OperationProcessor[I, O](op: Operation[I, O])(implicit refFactory: ActorRefFactory)
+class OperationProcessor[I, O](op: Operation[I, O])(implicit ec: ExecutionContext)
     extends Processor[I, O] {
   import OperationProcessor._
 
-  private val actor = {
+  private val actor: SimpleActor = {
     // TODO: make buffer setup configurable
-    // TODO: add idle timeout shutdown
     val operationWithInputAndOutputBuffers = Operation.Buffer[I](4) ~> op ~> Operation.Buffer[O](4)
-    refFactory.actorOf(Props(new OperationProcessor.Actor(operationWithInputAndOutputBuffers)))
+    new OperationProcessor.Actor(operationWithInputAndOutputBuffers)
   }
 
   val getSubscriber: Subscriber[I] =
@@ -87,10 +85,10 @@ object OperationProcessor {
   }
 
   // Actor providing execution logic around an `OperationChain`
-  private class Actor(op: OperationX) extends akka.actor.Actor with Subscription with Context {
+  private class Actor(op: OperationX)(implicit ec: ExecutionContext) extends SimpleActor with Subscription with Context {
     val chain = new OperationChain(op, this)
 
-    def receive: Receive = {
+    val receive: Receive = {
       case OnNext(element)           ⇒ chain.leftDownstream.onNext(element)
       case OnComplete                ⇒ chain.leftDownstream.onComplete()
       case OnError(e)                ⇒ chain.leftDownstream.onError(e)
@@ -100,34 +98,16 @@ object OperationProcessor {
 
       case Job(thunk)                ⇒ thunk()
 
-      case OnSubscribe(subscription) ⇒ connectUpstream(subscription)
+      case OnSubscribe(subscription) ⇒ chain.connectUpstream(subscription)
       case Subscribe(subscriber)     ⇒ connectDownstream(subscriber)
     }
-
-    def connectUpstream(subscription: Subscription): Unit =
-      chain.connectUpstream {
-        new Upstream {
-          def requestMore(elements: Int) = subscription.requestMore(elements)
-          def cancel() = {
-            subscription.cancel()
-            if (chain.isDownstreamCompleted) context.stop(self)
-          }
-          override def toString = s"Upstream($subscription)"
-        }
-      }
 
     def connectDownstream(subscriber: Subscriber[Any]): Unit = {
       chain.connectDownstream {
         new Downstream {
           def onNext(element: Any) = subscriber.onNext(element)
-          def onComplete() = {
-            subscriber.onComplete()
-            if (chain.isUpstreamCompleted) context.stop(self)
-          }
-          def onError(cause: Throwable) = {
-            subscriber.onError(cause)
-            if (chain.isUpstreamCompleted) context.stop(self)
-          }
+          def onComplete() = subscriber.onComplete()
+          def onError(cause: Throwable) = subscriber.onError(cause)
           override def toString = s"Downstream($subscriber)"
         }
       }
@@ -135,8 +115,8 @@ object OperationProcessor {
     }
 
     // outside Subscription interface facing downstream, called from another thread
-    def requestMore(elements: Int) = self ! RequestMore(elements)
-    def cancel() = self ! Cancel
+    def requestMore(elements: Int) = this ! RequestMore(elements)
+    def cancel() = this ! Cancel
 
     // Context interface
     def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit =
@@ -166,6 +146,6 @@ object OperationProcessor {
       }
 
     // helpers
-    def schedule(body: ⇒ Unit): Unit = self ! Job(body _)
+    def schedule(body: ⇒ Unit): Unit = this ! Job(body _)
   }
 }

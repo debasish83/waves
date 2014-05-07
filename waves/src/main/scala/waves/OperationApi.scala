@@ -21,7 +21,6 @@ import scala.util.control.NonFatal
 import scala.util.{ Failure, Success, Try }
 import scala.concurrent.ExecutionContext
 import org.reactivestreams.api.{ Consumer, Producer }
-import akka.actor.ActorRefFactory
 import Operation._
 
 trait OperationApi[A] extends Any {
@@ -73,7 +72,7 @@ trait OperationApi[A] extends Any {
     append(ConcatAll[A, B])
 
   // alternative `concatAll` implementation
-  def concatAll2[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory, ec: ExecutionContext): Res[B] =
+  def concatAll2[B](implicit ev: Producable[A, B], ec: ExecutionContext): Res[B] =
     outerMap[B] {
       case Producable(FanOut.Tee(p1, p2)) ⇒ Flow(p1).head.concat(Flow(p2).tail.concatAll2.toProducer).toProducer
     }
@@ -157,7 +156,7 @@ trait OperationApi[A] extends Any {
 
   // maps the inner streams into a (head, tail) Tuple each
   // only available if the stream elements are themselves producable as a Producer[B]
-  def headAndTail[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory, ec: ExecutionContext): Res[(B, Producer[B])] = {
+  def headAndTail[B](implicit ev: Producable[A, B], ec: ExecutionContext): Res[(B, Producer[B])] = {
     def headTail: A ⇒ Producer[(B, Producer[B])] = {
       case Producable(FanOut.Tee(p1, p2)) ⇒
         val tailStream = Flow(p2).tail.toProducer

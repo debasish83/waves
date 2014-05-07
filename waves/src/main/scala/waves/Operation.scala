@@ -19,7 +19,6 @@ package waves
 import scala.language.{ higherKinds, implicitConversions }
 import scala.concurrent.ExecutionContext
 import org.reactivestreams.api.{ Producer, Consumer, Processor }
-import akka.actor.ActorRefFactory
 import waves.impl.OperationProcessor
 
 sealed trait OperationX // untyped base trait used for dealing with untyped operations
@@ -44,16 +43,16 @@ object Operation {
 
     def append[C](next: B ==> C): Res[C] = op ~> next
 
-    def toProcessor(implicit refFactory: ActorRefFactory): Processor[A, B] =
+    def toProcessor(implicit ec: ExecutionContext): Processor[A, B] =
       new OperationProcessor(op) // TODO: introduce implicit settings allowing for buffer size config
 
-    def produceTo(consumer: Consumer[B])(implicit refFactory: ActorRefFactory): Consumer[A] = {
+    def produceTo(consumer: Consumer[B])(implicit ec: ExecutionContext): Consumer[A] = {
       val processor = toProcessor
       processor.produceTo(consumer)
       processor
     }
 
-    def drain(callback: B ⇒ Unit)(implicit refFactory: ActorRefFactory, ec: ExecutionContext): Consumer[A] =
+    def drain(callback: B ⇒ Unit)(implicit ec: ExecutionContext): Consumer[A] =
       onElement(callback) produceTo StreamConsumer.blackHole[B]
   }
 
