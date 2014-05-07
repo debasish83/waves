@@ -90,7 +90,7 @@ private[impl] class OperationChain(op: OperationX, ctx: OperationProcessor.Conte
       rightDownstreamCollector.flushTo(downstream)
       rightDownstreamCollector = null // free memory and signal that we have flushed
     } else if (isDownstreamCompleted && (rightDownstreamCollector ne null)) {
-      // the upstream has been cancelled *before* we were even connected, so cancel by flushing
+      // the downstream has been completed *before* we were even connected, so complete by flushing
       rightDownstreamCollector.flushTo(downstream)
     } else throw new IllegalStateException(s"Cannot attach 2nd downstream $downstream, downstream ${_rightDownstream.downstream} is already attached")
 }
@@ -148,10 +148,9 @@ private object OperationChain {
     private[this] var cancelled = false
     def requestMore(elements: Int) = requested += elements
     def cancel() = cancelled = true
-    def flushTo(upstream: Upstream): Unit = {
+    def flushTo(upstream: Upstream): Unit =
       if (cancelled) upstream.cancel()
       else if (requested > 0) upstream.requestMore(requested)
-    }
   }
 
   private class CollectingDownstream extends Downstream {
@@ -159,12 +158,11 @@ private object OperationChain {
     def onNext(element: Any) = throw new IllegalStateException // unrequested onNext
     def onComplete() = termination = None
     def onError(cause: Throwable) = termination = Some(cause)
-    def flushTo(downstream: Downstream): Unit = {
+    def flushTo(downstream: Downstream): Unit =
       termination match {
         case null        ⇒ // nothing to do
         case None        ⇒ downstream.onComplete()
         case Some(error) ⇒ downstream.onError(error)
       }
-    }
   }
 }
