@@ -55,6 +55,10 @@ val publishingSettings = Seq(
       </developer>
     </developers>)
 
+val noPublishingSettings = Seq(
+  publishArtifact := false,
+  publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo"))))
+
 /////////////////////// DEPENDENCIES /////////////////////////
 
 val `akka-actor`           = "com.typesafe.akka"    %% "akka-actor"  % "2.3.2"  % "compile"
@@ -64,13 +68,15 @@ val specs2                 = "org.specs2" %% "specs2-core" % "2.3.11" % "test"
 
 /////////////////////// PROJECTS /////////////////////////
 
+lazy val root = project.in(file("."))
+  .aggregate(examples, waves)
+  .settings(noPublishingSettings: _*)
+
 lazy val examples = project
   .dependsOn(waves)
   .settings(commonSettings: _*)
   .settings(cappiSettings: _*)
-  .settings(
-    publishTo := None
-  )
+  .settings(noPublishingSettings: _*)
 
 lazy val waves = project
   .settings(commonSettings: _*)
