@@ -29,18 +29,18 @@ trait OperationApi[A] extends Any {
 
   type Res[_]
 
-  def ~>[B](next: A ==> B): Res[B]
+  def append[B](next: A ==> B): Res[B]
 
   // appends a simple buffer element which eagerly requests from upstream and
   // dispatches to downstream up to the given max buffer size
   def buffer(size: Int): Res[A] = {
     require(Integer.lowestOneBit(size) == size, "size must be a power of 2")
-    this ~> Buffer(size)
+    append(Buffer(size))
   }
 
   // appends the given flow to the end of this stream
   def concat(next: ⇒ Producer[A]): Res[A] =
-    this ~> Concat(next _)
+    append(Concat(next _))
 
   // filters the stream with a partial function and maps to its results
   def collect[B](pf: PartialFunction[A, B]): Res[B] =
@@ -69,7 +69,8 @@ trait OperationApi[A] extends Any {
 
   // flattens the upstream by concatenation
   // only available if the stream elements are themselves producable as a Producer[B]
-  def concatAll[B](implicit ev: Producable[A, B]): Res[B] = this ~> ConcatAll[A, B]
+  def concatAll[B](implicit ev: Producable[A, B]): Res[B] =
+    append(ConcatAll[A, B])
 
   // alternative `concatAll` implementation
   def concatAll2[B](implicit ev: Producable[A, B], refFactory: ActorRefFactory, ec: ExecutionContext): Res[B] =
@@ -80,27 +81,30 @@ trait OperationApi[A] extends Any {
   // "compresses" a fast upstream by keeping one element buffered and reducing surplus values using the given function
   // consumes at max rate, produces no faster than the upstream
   def compress[B](seed: B)(f: (B, A) ⇒ B): Res[B] =
-    this ~> CustomBuffer[A, B, Either[B, B]]( // Left(c) = we need to request from upstream first, Right(c) = we can dispatch to downstream
-      seed = Left(seed),
-      compress = (either, a) ⇒ Right(f(either match {
-        case Left(x)  ⇒ x
-        case Right(x) ⇒ x
-      }, a)),
-      expand = {
-        case x @ Left(_) ⇒ (x, None)
-        case Right(b)    ⇒ (Left(b), Some(b))
-      },
-      canConsume = _ ⇒ true)
+    append {
+      CustomBuffer[A, B, Either[B, B]]( // Left(c) = we need to request from upstream first, Right(c) = we can dispatch to downstream
+        seed = Left(seed),
+        compress = (either, a) ⇒ Right(f(either match {
+          case Left(x)  ⇒ x
+          case Right(x) ⇒ x
+        }, a)),
+        expand = {
+          case x @ Left(_) ⇒ (x, None)
+          case Right(b)    ⇒ (Left(b), Some(b))
+        },
+        canConsume = _ ⇒ true)
+    }
 
   // adds (bounded or unbounded) pressure elasticity
   // consumes at max rate as long as `canConsume` is true,
   // produces no faster than the rate with which `expand` produces B values
   def customBuffer[B, S](seed: S)(compress: (S, A) ⇒ S)(expand: S ⇒ (S, Option[B]))(canConsume: S ⇒ Boolean): Res[B] =
-    this ~> CustomBuffer(seed, compress, expand, canConsume)
+    append(CustomBuffer(seed, compress, expand, canConsume))
 
   // drops the first n upstream values
   // consumes the first n upstream values at max rate, afterwards directly copies upstream
-  def drop(n: Int): Res[A] = this ~> Drop(n)
+  def drop(n: Int): Res[A] =
+    append(Drop(n))
 
   // produces one boolean for the first T that satisfies p
   // consumes at max rate until p(t) becomes true, unsubscribes afterwards
@@ -110,23 +114,26 @@ trait OperationApi[A] extends Any {
   // "expands" a slow upstream by buffering the last upstream element and producing it whenever requested
   // consumes at max rate, produces at max rate once the first upstream value has been buffered
   def expand[S](seed: S)(produce: S ⇒ (S, A)): Res[A] =
-    this ~> CustomBuffer[A, A, Option[A]](
-      seed = None,
-      compress = (_, x) ⇒ Some(x),
-      expand = s ⇒ (s, s),
-      canConsume = _ ⇒ true)
+    append {
+      CustomBuffer[A, A, Option[A]](
+        seed = None,
+        compress = (_, x) ⇒ Some(x),
+        expand = s ⇒ (s, s),
+        canConsume = _ ⇒ true)
+    }
 
   // general customizable fan-in
   def fanIn[B, O](secondary: Producer[B], fanIn: FanIn.Provider[A, B, O]): Res[O] =
-    this ~> FanInBox(secondary, fanIn)
+    append(FanInBox(secondary, fanIn))
 
   // general customizable fan-out
   def fanOut[F[_] <: FanOut[_]](fanOut: FanOut.Provider[F], secondary: Producer[F[A]#O2] ⇒ Unit): Res[F[A]#O1] =
-    this ~> FanOutBox(fanOut, secondary)
+    append(FanOutBox(fanOut, secondary))
 
   // filters a streams according to the given predicate
   // immediately consumes more whenever p(t) is false
-  def filter(p: A ⇒ Boolean): Res[A] = this ~> Filter(p)
+  def filter(p: A ⇒ Boolean): Res[A] =
+    append(Filter(p))
 
   // produces the first T that satisfies p
   // consumes at max rate until p(t) becomes true, unsubscribes afterwards
@@ -135,7 +142,8 @@ trait OperationApi[A] extends Any {
 
   // classic fold
   // consumes at max rate, produces only one value
-  def fold[B](seed: B)(f: (B, A) ⇒ B): Res[B] = this ~> Fold(seed, f)
+  def fold[B](seed: B)(f: (B, A) ⇒ B): Res[B] =
+    append(Fold(seed, f))
 
   // produces one boolean (if all upstream values satisfy p emits true otherwise false)
   // consumes at max rate until p(t) becomes false, unsubscribes afterwards
@@ -144,7 +152,8 @@ trait OperationApi[A] extends Any {
 
   // "extracts" the first element
   // only available if the stream elements are themselves producable as a Producer[B]
-  def head[B](implicit ev: Producable[A, B]): Res[B] = this ~> Head[A, B]
+  def head[B](implicit ev: Producable[A, B]): Res[B] =
+    append(Head[A, B])
 
   // maps the inner streams into a (head, tail) Tuple each
   // only available if the stream elements are themselves producable as a Producer[B]
@@ -154,18 +163,20 @@ trait OperationApi[A] extends Any {
         val tailStream = Flow(p2).tail.toProducer
         Flow(p1).headStream.map(_ -> tailStream).toProducer
     }
-    this ~> (Map(headTail) ~> ConcatAll[Producer[(B, Producer[B])], (B, Producer[B])])
+    append(Map(headTail) ~> ConcatAll[Producer[(B, Producer[B])], (B, Producer[B])])
   }
 
   // produces the first upstream element, unsubscribes afterwards
-  def headStream: Res[A] = this ~> Take(1)
+  def headStream: Res[A] =
+    append(Take(1))
 
   // maps the given function over the upstream
-  def map[B](f: A ⇒ B): Res[B] = this ~> Map(f)
+  def map[B](f: A ⇒ B): Res[B] =
+    append(Map(f))
 
   // combined map & concat operation
   def mapConcat[B, P](f: A ⇒ P)(implicit ev: Producable[P, B]): Res[B] =
-    this ~> (Map[A, Producer[B]](a ⇒ ev(f(a))) ~> ConcatAll[Producer[B], B])
+    append(Map[A, Producer[B]](a ⇒ ev(f(a))) ~> ConcatAll[Producer[B], B])
 
   // produces the first A returned by f or optionally the given default value
   // consumes at max rate until f returns a Some, unsubscribes afterwards
@@ -186,7 +197,8 @@ trait OperationApi[A] extends Any {
     fanIn(secondary, FanIn.MergeToEither[A, B]())
 
   // repeats each element coming in from upstream `factor` times
-  def multiply(factor: Int): Res[A] = this ~> Multiply[A](factor)
+  def multiply(factor: Int): Res[A] =
+    append(Multiply[A](factor))
 
   // attaches the given callback which "listens" to `cancel' events without otherwise affecting the stream
   def onCancel[U](callback: ⇒ U): Res[A] =
@@ -206,7 +218,7 @@ trait OperationApi[A] extends Any {
 
   // attaches the given callback which "listens" to all stream events without otherwise affecting the stream
   def onEvent(callback: StreamEvent[A] ⇒ Unit): Res[A] =
-    this ~> OnEvent(callback)
+    append(OnEvent(callback))
 
   // attaches the given callback which "listens" to all stream events without otherwise affecting the stream
   def onEventPF(callback: PartialFunction[StreamEvent[A], Unit]): Res[A] =
@@ -224,44 +236,54 @@ trait OperationApi[A] extends Any {
     }
 
   // chains in the given operation
-  def op[B](operation: A ==> B): Res[B] = this ~> operation
+  def op[B](operation: A ==> B): Res[B] =
+    append(operation)
 
   // transforms the underlying stream itself (not its elements) with the given function
-  def outerMap[B](f: Producer[A] ⇒ Producer[B]): Res[B] = this ~> OuterMap(f)
+  def outerMap[B](f: Producer[A] ⇒ Producer[B]): Res[B] =
+    append(OuterMap(f))
 
   // debugging help: simply printlns all events passing through
-  def printEvent(marker: String): Res[A] = onEvent(ev ⇒ println(s"$marker: $ev"))
+  def printEvent(marker: String): Res[A] =
+    onEvent(ev ⇒ println(s"$marker: $ev"))
 
   // lifts errors from upstream back into the main data flow before completing normally
   def recover[B <: A, P](pf: PartialFunction[Throwable, P])(implicit ev: Producable[P, B]): Res[B] =
-    this ~> Recover(pf andThen ev)
+    append(Recover(pf andThen ev))
 
   // general stream transformation
   def transform[B](transformer: Transformer[A, B]): Res[B] =
-    this ~> Transform(transformer)
+    append(Transform(transformer))
 
   // lifts regular data and errors from upstream into a Try
   def tryRecover: Res[Try[A]] =
-    this ~> (Map[A, Try[A]](Success(_)) ~> Recover[Try[A], Try[A]] {
-      case NonFatal(e) ⇒ StreamProducer(Failure(e) :: Nil)
-    })
+    append {
+      Map[A, Try[A]](Success(_)) ~> Recover[Try[A], Try[A]] {
+        case NonFatal(e) ⇒ StreamProducer(Failure(e) :: Nil)
+      }
+    }
 
   // splits the upstream into sub-streams based on the commands produced by the given function,
   // never produces empty sub-streams
-  def split(f: A ⇒ Split.Command): Res[Producer[A]] = this ~> Split(f)
+  def split(f: A ⇒ Split.Command): Res[Producer[A]] =
+    append(Split(f))
 
   // drops the first upstream value and forwards the remaining upstream
   // consumes the first upstream value immediately, afterwards directly copies upstream
-  def tail: Res[A] = this ~> Drop(1)
+  def tail: Res[A] =
+    append(Drop(1))
 
   // forwards the first n upstream values, unsubscribes afterwards
-  def take(n: Int): Res[A] = this ~> Take[A](n)
+  def take(n: Int): Res[A] =
+    append(Take[A](n))
 
   // splits the upstream into two downstreams that will receive the exact same elements in the same sequence
-  def tee(consumer: Consumer[A]): Res[A] = tee(_.produceTo(consumer))
+  def tee(consumer: Consumer[A]): Res[A] =
+    tee(_.produceTo(consumer))
 
   // splits the upstream into two downstreams that will receive the exact same elements in the same sequence
-  def tee(f: Producer[A] ⇒ Unit): Res[A] = this ~> FanOutBox[A, FanOut.Tee](FanOut.Tee, f)
+  def tee(f: Producer[A] ⇒ Unit): Res[A] =
+    append(FanOutBox[A, FanOut.Tee](FanOut.Tee, f))
 
   // forwards as long as p returns true, unsubscribes afterwards
   def takeWhile(p: A ⇒ Boolean): Res[A] =

@@ -42,7 +42,7 @@ object Operation {
   implicit class Api[A, B](val op: A ==> B) extends OperationApi[B] {
     type Res[C] = A ==> C
 
-    def ~>[C](next: B ==> C): Res[C] = op ~> next
+    def append[C](next: B ==> C): Res[C] = op ~> next
 
     def toProcessor(implicit refFactory: ActorRefFactory): Processor[A, B] =
       new OperationProcessor(op) // TODO: introduce implicit settings allowing for buffer size config

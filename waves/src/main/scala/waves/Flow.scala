@@ -45,7 +45,7 @@ object Flow {
   implicit class Api[A](val flow: Flow[A]) extends OperationApi[A] {
     type Res[B] = Flow[B]
 
-    def ~>[B](next: A ==> B): Flow[B] = flow ~> next
+    def append[B](next: A ==> B): Flow[B] = flow ~> next
 
     def toProducer(implicit refFactory: ActorRefFactory): Producer[A] =
       flow match {
