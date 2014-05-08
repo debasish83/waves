@@ -115,6 +115,7 @@ private[waves] object OperationImpl {
       case Fold(seed, f)               ⇒ new ops.Fold(seed, f.asInstanceOf[(Any, Any) ⇒ Any])
       case Map(f)                      ⇒ new ops.Map(f.asInstanceOf[Any ⇒ Any])
       case Merge(secondary)            ⇒ new ops.Merge(secondary.asInstanceOf[Producer[Any]])
+      case MergeToEither(secondary)    ⇒ new ops.MergeToEither(secondary.asInstanceOf[Producer[Any]])
       case Multiply(factor)            ⇒ new ops.Multiply(factor)
       case OnEvent(callback)           ⇒ new ops.OnEvent(callback.asInstanceOf[Operation.StreamEvent[Any] ⇒ Unit])
       case Recover(f)                  ⇒ new ops.Recover(f)

@@ -59,7 +59,7 @@ abstract class StaticFanIn(secondary: Producer[Any])(implicit val upstream: Upst
 
   def running(upstream2: Upstream): RunningBehavior
 
-  abstract class RunningBehavior(upstream2: Upstream) extends Behavior {
+  abstract class RunningBehavior(val upstream2: Upstream) extends Behavior {
     override def cancel() = {
       upstream.cancel()
       upstream2.cancel()
