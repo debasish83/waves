@@ -17,7 +17,7 @@
 package waves.impl
 
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
 import scala.annotation.tailrec
@@ -25,16 +25,19 @@ import scala.annotation.tailrec
 /**
  * Minimalistic actor implementation without `become`.
  *
- * The atomic boolean value signals whether we are currently running or scheduled to run
- * on the given ExecutionContext. We start out with a value of `true` to protect ourselves
- * from starting mailbox processing before the object has been fully initialized.
+ * The atomic integer value signals whether we are currently running or scheduled to run on the given
+ * ExecutionContext or whether we are "idle".
+ * We start out in state SCHEDULED to protect ourselves from starting mailbox processing
+ * before the object has been fully initialized.
  */
-private[impl] abstract class SimpleActor(implicit ec: ExecutionContext) extends AtomicBoolean(true)
+private[impl] abstract class SimpleActor(implicit ec: ExecutionContext) extends AtomicInteger
     with (AnyRef ⇒ Unit) with Runnable {
-  private val Throughput = 5 // TODO: make configurable
+  private final val SCHEDULED = 0 // compile-time constant
+  private final val IDLE = 1 // compile-time constant
+  private final val Throughput = 5 // TODO: make configurable
 
-  // TODO: if we can guarantee boundedness of the mailbox use optimized ringbuffer-based implementation
-  // otherwise upgrade to "Gidenstam, Sundell and Tsigas"-like impl, e.g. ConcurrentArrayQueue from Jetty 9
+  // TODO: upgrade to fast MPSC queue, e.g.
+  // http://www.1024cores.net/home/lock-free-algorithms/queues/non-intrusive-mpsc-node-based-queue
   private[this] val mailbox = new ConcurrentLinkedQueue[AnyRef]
 
   def !(msg: AnyRef): Unit = {
@@ -62,18 +65,18 @@ private[impl] abstract class SimpleActor(implicit ec: ExecutionContext) extends 
     }
 
   private def scheduleIfPossible(): Unit =
-    if (compareAndSet(false, true)) {
+    if (compareAndSet(IDLE, SCHEDULED)) {
       try ec.execute(this)
       catch {
         case NonFatal(e) ⇒
-          set(false)
+          set(IDLE)
           throw e
       }
     }
 
-  // must be called at the end of the outermost constructor to 
+  // must be called at the end of the outermost constructor
   protected def startMessageProcessing(): Unit = {
-    set(false)
+    set(IDLE)
     if (!mailbox.isEmpty)
       scheduleIfPossible()
   }

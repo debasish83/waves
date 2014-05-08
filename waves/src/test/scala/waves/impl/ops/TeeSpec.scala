@@ -173,6 +173,6 @@ class TeeSpec extends OperationImplSpec {
 
   class TeeFixture extends Fixture[Char, Char] with Scope {
     var sub: MockDownstream = _
-    def operation = Operation.FanOutBox[Char, FanOut.Tee](FanOut.Tee, p ⇒ sub = p.asInstanceOf[MockDownstream])
+    def operation = Operation.Tee[Char](p ⇒ sub = p.asInstanceOf[MockDownstream])
   }
 }

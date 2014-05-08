@@ -19,6 +19,7 @@ package impl
 
 import org.reactivestreams.api.Producer
 import OperationProcessor.{ SubUpstreamHandling, SubDownstreamHandling }
+import sun.reflect.generics.reflectiveObjects.NotImplementedException
 
 trait OperationImpl extends Downstream with Upstream
 
@@ -79,16 +80,16 @@ object OperationImpl {
       case ConcatAll()                 ⇒ new ops.ConcatAll()
       case CustomBuffer(seed, f, g, h) ⇒ new ops.CustomBuffer(seed, f, g, h)
       case Drop(n)                     ⇒ new ops.Drop(n)
-      case FanInBox(sec, fanIn)        ⇒ new ops.FanInBox(sec, fanIn)
-      case FanOutBox(fanOut, sec)      ⇒ new ops.FanOutBox(fanOut.asInstanceOf[FanOut.Provider[FanOut]], sec.asInstanceOf[Producer[Any] ⇒ Unit])
       case Filter(f)                   ⇒ new ops.Filter(f)
       case Fold(seed, f)               ⇒ new ops.Fold(seed, f)
       case Map(f)                      ⇒ new ops.Map(f)
       case Multiply(factor)            ⇒ new ops.Multiply(factor)
       case OnEvent(callback)           ⇒ new ops.OnEvent(callback)
       case Recover(f)                  ⇒ new ops.Recover(f)
-      case Transform(transformer)      ⇒ new ops.Transform(transformer)
       case Split(f)                    ⇒ new ops.Split(f)
       case Take(n)                     ⇒ new ops.Take(n)
+      case Tee(secondary)              ⇒ new ops.Tee(secondary)
+      case Transform(transformer)      ⇒ new ops.Transform(transformer)
+      case x                           ⇒ ???
     }
 }

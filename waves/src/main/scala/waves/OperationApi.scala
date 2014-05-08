@@ -121,14 +121,6 @@ trait OperationApi[A] extends Any {
         canConsume = _ ⇒ true)
     }
 
-  // general customizable fan-in
-  def fanIn[B, O](secondary: Producer[B], fanIn: FanIn.Provider[A, B, O]): Res[O] =
-    append(FanInBox(secondary, fanIn))
-
-  // general customizable fan-out
-  def fanOut[F[_] <: FanOut[_]](fanOut: FanOut.Provider[F], secondary: Producer[F[A]#O2] ⇒ Unit): Res[F[A]#O1] =
-    append(FanOutBox(fanOut, secondary))
-
   // filters a streams according to the given predicate
   // immediately consumes more whenever p(t) is false
   def filter(p: A ⇒ Boolean): Res[A] =
@@ -189,11 +181,11 @@ trait OperationApi[A] extends Any {
 
   // merges the values produced by the given stream into the consumed stream
   def merge[AA >: A](secondary: Producer[_ <: AA]): Res[AA] =
-    fanIn(secondary.asInstanceOf[Producer[AA]], FanIn.Merge[A, AA]())
+    append(Merge[A, AA](secondary))
 
   // merges the values produced by the given stream into the consumed stream
-  def mergeToEither[B](secondary: Producer[B]): Res[Either[A, B]] =
-    fanIn(secondary, FanIn.MergeToEither[A, B]())
+  def mergeToEither[L](left: Producer[L]): Res[Either[L, A]] =
+    append(MergeToEither[L, A](left))
 
   // repeats each element coming in from upstream `factor` times
   def multiply(factor: Int): Res[A] =
@@ -281,8 +273,8 @@ trait OperationApi[A] extends Any {
     tee(_.produceTo(consumer))
 
   // splits the upstream into two downstreams that will receive the exact same elements in the same sequence
-  def tee(f: Producer[A] ⇒ Unit): Res[A] =
-    append(FanOutBox[A, FanOut.Tee](FanOut.Tee, f))
+  def tee(secondary: Producer[A] ⇒ Unit): Res[A] =
+    append(Tee[A](secondary))
 
   // forwards as long as p returns true, unsubscribes afterwards
   def takeWhile(p: A ⇒ Boolean): Res[A] =
@@ -297,7 +289,7 @@ trait OperationApi[A] extends Any {
   // combines the upstream and the given flow into tuples
   // produces at the rate of the slower upstream (i.e. no values are dropped)
   def zip[B](secondary: Producer[B]): Res[(A, B)] =
-    fanIn(secondary, FanIn.Zip[A, B]())
+    append(Zip[A, B](secondary))
 }
 
 object OperationApi {

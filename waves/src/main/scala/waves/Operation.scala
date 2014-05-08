@@ -75,12 +75,6 @@ object Operation {
 
   final case class Drop[T](n: Int) extends (T ==> T)
 
-  final case class FanInBox[I1, I2, O](secondary: Producer[I2], fanIn: FanIn.Provider[I1, I2, O])
-    extends (I1 ==> O)
-
-  final case class FanOutBox[I, F[_] <: FanOut[_]](fanOut: FanOut.Provider[F], secondary: Producer[F[I]#O2] ⇒ Unit)
-    extends (I ==> F[I]#O1)
-
   final case class Filter[T](p: T ⇒ Boolean) extends (T ==> T)
 
   final case class Fold[A, B](seed: B, f: (B, A) ⇒ B) extends (A ==> B)
@@ -96,6 +90,10 @@ object Operation {
   }
 
   final case class Map[A, B](f: A ⇒ B) extends (A ==> B)
+
+  final case class Merge[A, B >: A](secondary: Producer[_ <: B]) extends (A ==> B)
+
+  final case class MergeToEither[L, R](left: Producer[L]) extends (R ==> Either[L, R])
 
   final case class Multiply[T](factor: Int) extends (T ==> T)
 
@@ -124,6 +122,8 @@ object Operation {
 
   final case class Take[T](n: Int) extends (T ==> T)
 
+  final case class Tee[T](secondary: Producer[T] ⇒ Unit) extends (T ==> T)
+
   final case class Transform[A, B](transformer: Transformer[A, B]) extends (A ==> B)
 
   /**
@@ -143,4 +143,6 @@ object Operation {
     def onComplete: Seq[B] = Nil
     def cleanup(): Unit = ()
   }
+
+  final case class Zip[A, B](secondary: Producer[B]) extends (A ==> (A, B))
 }
