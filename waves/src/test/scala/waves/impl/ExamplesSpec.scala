@@ -71,6 +71,10 @@ class ExamplesSpec extends Specification with NoTimeConversions {
         } must produce(1 -> Seq(2, 3, 4), 7 -> Seq(8, 9))
     }
 
+    "zip" in {
+      flow(1 to 4).zip(flow(11 to 15).toProducer) must produce(1 -> 11, 2 -> 12, 3 -> 13, 4 -> 14)
+    }
+
     "custom operations" in {
       def splitAt4 = operation[Int].split(x ⇒ if (x % 4 == 0) Split.First else Split.Append)
       def substreamsToString[T] = operation[Producer[T]].mapConcat(Flow(_).fold("")(_ + _.toString).toProducer)

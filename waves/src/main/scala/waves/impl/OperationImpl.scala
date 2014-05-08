@@ -19,9 +19,10 @@ package impl
 
 import org.reactivestreams.api.Producer
 
-trait OperationImpl extends Downstream with Upstream
+private[waves] trait OperationImpl extends Downstream with Upstream
 
-object OperationImpl {
+private[waves] object OperationImpl {
+  val Placeholder = new AnyRef
 
   trait SecondaryDownstream {
     def secondaryOnSubscribe(upstream2: Upstream): Unit = throw new IllegalStateException(s"Unexpected `subOnSubscribe($upstream2)` in $this")
@@ -121,6 +122,7 @@ object OperationImpl {
       case Tee(secondary)              ⇒ new ops.Tee(secondary)
       case Transform(transformer)      ⇒ new ops.Transform(transformer.asInstanceOf[Operation.Transformer[Any, Any]])
       case Unzip(secondary)            ⇒ new ops.Unzip(secondary)
-      case x                           ⇒ ???
+      case Zip(secondary)              ⇒ new ops.Zip(secondary)
+      case x                           ⇒ sys.error(s"Operation $x is not yet implemented")
     }
 }
