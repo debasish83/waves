@@ -144,5 +144,7 @@ object Operation {
     def cleanup(): Unit = ()
   }
 
+  final case class Unzip[A, B](secondary: Producer[B] ⇒ Unit) extends ((A, B) ==> A)
+
   final case class Zip[A, B](secondary: Producer[B]) extends (A ==> (A, B))
 }

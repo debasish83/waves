@@ -286,8 +286,11 @@ trait OperationApi[A] extends Any {
       }
     }
 
+  // splits an upstream of tuples into two downstreams which each receive a tuple component
+  def unzip[T1, T2](secondary: Producer[T2] ⇒ Unit)(implicit ev: A =:= (T1, T2)): Res[T1] =
+    append(Unzip[T1, T2](secondary).asInstanceOf[A ==> T1])
+
   // combines the upstream and the given flow into tuples
-  // produces at the rate of the slower upstream (i.e. no values are dropped)
   def zip[B](secondary: Producer[B]): Res[(A, B)] =
     append(Zip[A, B](secondary))
 }

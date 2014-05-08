@@ -74,22 +74,23 @@ object OperationImpl {
   import Operation._
   def apply(op: OperationX)(implicit upstream: Upstream, downstream: Downstream,
                             ctx: OperationProcessor.Context): OperationImpl =
-    op.asInstanceOf[Operation[Any, Any]] match {
+    op match {
       case Buffer(size)                ⇒ new ops.Buffer(size)
       case Concat(next)                ⇒ new ops.Concat(next)
       case ConcatAll()                 ⇒ new ops.ConcatAll()
-      case CustomBuffer(seed, f, g, h) ⇒ new ops.CustomBuffer(seed, f, g, h)
+      case CustomBuffer(seed, f, g, h) ⇒ new ops.CustomBuffer(seed, f.asInstanceOf[(Any, Any) ⇒ Any], g, h)
       case Drop(n)                     ⇒ new ops.Drop(n)
-      case Filter(f)                   ⇒ new ops.Filter(f)
-      case Fold(seed, f)               ⇒ new ops.Fold(seed, f)
-      case Map(f)                      ⇒ new ops.Map(f)
+      case Filter(f)                   ⇒ new ops.Filter(f.asInstanceOf[Any ⇒ Boolean])
+      case Fold(seed, f)               ⇒ new ops.Fold(seed, f.asInstanceOf[(Any, Any) ⇒ Any])
+      case Map(f)                      ⇒ new ops.Map(f.asInstanceOf[Any ⇒ Any])
       case Multiply(factor)            ⇒ new ops.Multiply(factor)
-      case OnEvent(callback)           ⇒ new ops.OnEvent(callback)
+      case OnEvent(callback)           ⇒ new ops.OnEvent(callback.asInstanceOf[Operation.StreamEvent[Any] ⇒ Unit])
       case Recover(f)                  ⇒ new ops.Recover(f)
-      case Split(f)                    ⇒ new ops.Split(f)
+      case Split(f)                    ⇒ new ops.Split(f.asInstanceOf[Any ⇒ Operation.Split.Command])
       case Take(n)                     ⇒ new ops.Take(n)
       case Tee(secondary)              ⇒ new ops.Tee(secondary)
-      case Transform(transformer)      ⇒ new ops.Transform(transformer)
+      case Transform(transformer)      ⇒ new ops.Transform(transformer.asInstanceOf[Operation.Transformer[Any, Any]])
+      case Unzip(secondary)            ⇒ new ops.Unzip(secondary)
       case x                           ⇒ ???
     }
 }

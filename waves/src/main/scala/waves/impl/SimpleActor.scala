@@ -41,7 +41,7 @@ private[impl] abstract class SimpleActor(implicit ec: ExecutionContext) extends 
   private[this] val mailbox = new ConcurrentLinkedQueue[AnyRef]
 
   def !(msg: AnyRef): Unit = {
-    mailbox.offer(msg)
+    mailbox.offer(if (msg eq null) SimpleActor.NULL else msg)
     scheduleIfPossible()
   }
 
@@ -51,7 +51,7 @@ private[impl] abstract class SimpleActor(implicit ec: ExecutionContext) extends 
         if (maxRemainingMessages > 0) {
           val nextMsg = mailbox.poll()
           if (nextMsg ne null) {
-            apply(nextMsg)
+            apply(if (nextMsg eq SimpleActor.NULL) null else nextMsg)
             processMailbox(maxRemainingMessages - 1)
           }
         }
@@ -80,4 +80,8 @@ private[impl] abstract class SimpleActor(implicit ec: ExecutionContext) extends 
     if (!mailbox.isEmpty)
       scheduleIfPossible()
   }
+}
+
+object SimpleActor {
+  private val NULL = new AnyRef
 }

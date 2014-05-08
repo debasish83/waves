@@ -20,8 +20,8 @@ package ops
 import org.reactivestreams.api.Producer
 import waves.impl.OperationProcessor.SubUpstreamHandling
 
-class Tee(secondary: Producer[Any] ⇒ Unit)(implicit val upstream: Upstream, val downstream: Downstream,
-                                           ctx: OperationProcessor.Context)
+class Unzip(secondary: Producer[Any] ⇒ Unit)(implicit val upstream: Upstream, val downstream: Downstream,
+                                             ctx: OperationProcessor.Context)
     extends OperationImpl.Abstract with SubUpstreamHandling {
 
   val downstream2 = ctx.requestSubDownstream(this)
@@ -29,33 +29,26 @@ class Tee(secondary: Producer[Any] ⇒ Unit)(implicit val upstream: Upstream, va
 
   var requested1 = 0
   var requested2 = 0
-  var cancelled1 = false
-  var cancelled2 = false
 
   override def requestMore(elements: Int): Unit = {
     requested1 += elements
     requestMoreIfPossible()
   }
 
-  override def cancel(): Unit = {
-    cancelled1 = true
-    if (cancelled2) upstream.cancel()
-    else requestMoreIfPossible()
-  }
-
   override def onNext(element: Any): Unit = {
-    if (!cancelled1) downstream.onNext(element)
-    if (!cancelled2) downstream2.onNext(element)
+    val tuple = element.asInstanceOf[(Any, Any)]
+    downstream.onNext(tuple._1)
+    downstream2.onNext(tuple._2)
   }
 
   override def onComplete(): Unit = {
-    if (!cancelled1) downstream.onComplete()
-    if (!cancelled2) downstream2.onComplete()
+    downstream.onComplete()
+    downstream2.onComplete()
   }
 
   override def onError(cause: Throwable): Unit = {
-    if (!cancelled1) downstream.onError(cause)
-    if (!cancelled2) downstream2.onError(cause)
+    downstream.onError(cause)
+    downstream2.onError(cause)
   }
 
   def subRequestMore(elements: Int): Unit = {
@@ -63,32 +56,14 @@ class Tee(secondary: Producer[Any] ⇒ Unit)(implicit val upstream: Upstream, va
     requestMoreIfPossible()
   }
 
-  def subCancel(): Unit = {
-    cancelled2 = true
-    if (cancelled1) upstream.cancel()
-    else requestMoreIfPossible()
-  }
+  def subCancel(): Unit = upstream.cancel()
 
   private def requestMoreIfPossible(): Unit =
-    if (cancelled1) {
-      if (requested2 > 0) {
-        val r = requested2
-        requested2 = 0
+    math.min(requested1, requested2) match {
+      case 0 ⇒ // nothing to do
+      case r ⇒
+        requested1 -= r
+        requested2 -= r
         upstream.requestMore(r)
-      }
-    } else if (cancelled2) {
-      if (requested1 > 0) {
-        val r = requested1
-        requested1 = 0
-        upstream.requestMore(r)
-      }
-    } else {
-      math.min(requested1, requested2) match {
-        case 0 ⇒ // nothing to do
-        case r ⇒
-          requested1 -= r
-          requested2 -= r
-          upstream.requestMore(r)
-      }
     }
 }
