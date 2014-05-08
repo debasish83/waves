@@ -19,73 +19,35 @@ package ops
 
 import org.reactivestreams.api.Producer
 
-class Zip(secondary: Producer[Any])(implicit val upstream: Upstream, val downstream: Downstream,
-                                    ctx: OperationProcessor.Context) extends OperationImpl.StatefulWithSecondaryUpstream {
-  import Zip.Empty
+class Zip(_secondary: Producer[Any])(implicit _upstream: Upstream, _downstream: Downstream,
+                                     _ctx: OperationProcessor.Context) extends StaticFanIn(_secondary) {
+  import OperationImpl.Placeholder
 
-  requestSecondaryUpstream(secondary)
-
-  var requested = 0
-
-  def initialBehavior: Behavior =
-    new Behavior {
-      override def requestMore(elements: Int) = requested += elements
-      override def cancel() = {
-        upstream.cancel()
-        cancelSecondaryUpstreamUponSubscription()
-      }
-      override def onComplete() = {
-        downstream.onComplete()
-        cancelSecondaryUpstreamUponSubscription()
-      }
-      override def onError(cause: Throwable) = {
-        downstream.onError(cause)
-        cancelSecondaryUpstreamUponSubscription()
-      }
-      override def secondaryOnSubscribe(upstream2: Upstream) = {
-        become(running(upstream2))
-        if (requested > 0) {
-          upstream.requestMore(1)
-          upstream2.requestMore(1)
-        }
-      }
-      def cancelSecondaryUpstreamUponSubscription(): Unit = become {
-        new Behavior {
-          override def secondaryOnSubscribe(upstream2: Upstream) = upstream2.cancel()
-          override def secondaryOnComplete() = ()
-          override def secondaryOnError(cause: Throwable) = ()
-        }
-      }
-    }
-
-  def running(upstream2: Upstream) = new Behavior {
-    var primaryElement: Any = Empty
-    var secondaryElement: Any = Empty
+  def running(upstream2: Upstream) = new RunningBehavior(upstream2) {
+    var primaryElement: Any = Placeholder
+    var secondaryElement: Any = Placeholder
 
     override def requestMore(elements: Int) = {
       requested += elements
-      if (requested == elements) requestOne()
+      if (requested == elements) requestOneFromBothUpstreams()
     }
-    override def cancel() = {
-      upstream.cancel()
-      upstream2.cancel()
-    }
+
     override def onNext(element: Any): Unit =
-      if (secondaryElement != Empty) {
+      if (secondaryElement != Placeholder) {
         val tuple = (element, secondaryElement)
-        secondaryElement = Empty
+        secondaryElement = Placeholder
         deliver(tuple)
       } else primaryElement = element
 
     override def secondaryOnNext(element: Any): Unit =
-      if (primaryElement != Empty) {
+      if (primaryElement != Placeholder) {
         val tuple = (primaryElement, element)
-        primaryElement = Empty
+        primaryElement = Placeholder
         deliver(tuple)
       } else secondaryElement = element
 
     override def onComplete(): Unit =
-      if (primaryElement != Empty) {
+      if (primaryElement != Placeholder) {
         become {
           new Behavior {
             override def secondaryOnNext(element: Any) = {
@@ -101,8 +63,9 @@ class Zip(secondary: Producer[Any])(implicit val upstream: Upstream, val downstr
         downstream.onComplete()
         upstream2.cancel()
       }
+
     override def secondaryOnComplete(): Unit =
-      if (secondaryElement != Empty) {
+      if (secondaryElement != Placeholder) {
         become {
           new Behavior {
             override def onNext(element: Any) = {
@@ -117,28 +80,10 @@ class Zip(secondary: Producer[Any])(implicit val upstream: Upstream, val downstr
         upstream.cancel()
       }
 
-    override def onError(cause: Throwable): Unit = {
-      downstream.onError(cause)
-      upstream2.cancel()
-    }
-    override def secondaryOnError(cause: Throwable): Unit = {
-      downstream.onError(cause)
-      upstream.cancel()
-    }
-
-    def deliver(tuple: (Any, Any)): Unit = {
-      downstream.onNext(tuple)
+    def deliver(element: Any): Unit = {
+      downstream.onNext(element)
       requested -= 1
-      if (requested > 0) requestOne()
-    }
-
-    def requestOne(): Unit = {
-      upstream.requestMore(1)
-      upstream2.requestMore(1)
+      if (requested > 0) requestOneFromBothUpstreams()
     }
   }
-}
-
-object Zip {
-  private val Empty = new AnyRef
 }
