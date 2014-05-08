@@ -18,7 +18,7 @@ package waves.impl
 package ops
 
 class Map(f: Any ⇒ Any)(implicit val upstream: Upstream, val downstream: Downstream)
-    extends OperationImpl.Abstract {
+    extends OperationImpl.Default {
 
   override def onNext(element: Any): Unit = {
     val mappedElement =

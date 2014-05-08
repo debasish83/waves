@@ -18,7 +18,7 @@ package waves.impl
 package ops
 
 class Fold(seed: Any, f: (Any, Any) ⇒ Any)(implicit val upstream: Upstream, val downstream: Downstream)
-    extends OperationImpl.Abstract {
+    extends OperationImpl.Default {
 
   var acc = seed
 

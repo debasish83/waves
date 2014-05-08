@@ -45,7 +45,7 @@ class ConcatSpec extends OperationImplSpec {
         import fixture._
         onComplete()
         expectNoComplete()
-        expectRequestSubUpstream(producer2)
+        expectRequestSecondaryUpstream(producer2)
       }
 
       "propagate error" in test(op) { fixture ⇒
@@ -69,7 +69,7 @@ class ConcatSpec extends OperationImplSpec {
         requestMore(1)
         expectRequestMore(1)
         onComplete()
-        expectRequestSubUpstream(producer2)
+        expectRequestSecondaryUpstream(producer2)
       }
 
       "gather up requestMore calls from downstream" in test(op) { fixture ⇒
@@ -128,7 +128,7 @@ class ConcatSpec extends OperationImplSpec {
         requestMore(1)
         expectRequestMore(1)
         onComplete()
-        val upstream2 = expectRequestSubUpstream(producer2)
+        val upstream2 = expectRequestSecondaryUpstream(producer2)
         upstream2.onSubscribe()
         upstream2.expectRequestMore(1)
         upstream2

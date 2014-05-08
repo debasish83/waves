@@ -40,7 +40,7 @@ class ConcatAllSpec extends OperationImplSpec {
         expectRequestMore(1)
         val flowA = mockProducer
         onNext(flowA)
-        expectRequestSubUpstream(flowA)
+        expectRequestSecondaryUpstream(flowA)
       }
 
       "gather up requestMore calls from downstream" in test(op) { fixture ⇒
@@ -150,7 +150,7 @@ class ConcatAllSpec extends OperationImplSpec {
         expectRequestMore(1)
         val flowA = mockProducer
         onNext(flowA)
-        val subUpstream = expectRequestSubUpstream(flowA)
+        val subUpstream = expectRequestSecondaryUpstream(flowA)
         subUpstream.onSubscribe()
         subUpstream.expectRequestMore(1)
         subUpstream
@@ -183,7 +183,7 @@ class ConcatAllSpec extends OperationImplSpec {
         expectRequestMore(1)
         val flowB = mockProducer
         onNext(flowB)
-        val subUpstream2 = expectRequestSubUpstream(flowB)
+        val subUpstream2 = expectRequestSecondaryUpstream(flowB)
         subUpstream2.onSubscribe()
         subUpstream2.expectRequestMore(5)
       }

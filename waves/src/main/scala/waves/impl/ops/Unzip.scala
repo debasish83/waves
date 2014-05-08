@@ -18,13 +18,12 @@ package waves.impl
 package ops
 
 import org.reactivestreams.api.Producer
-import waves.impl.OperationProcessor.SubUpstreamHandling
 
 class Unzip(secondary: Producer[Any] ⇒ Unit)(implicit val upstream: Upstream, val downstream: Downstream,
                                              ctx: OperationProcessor.Context)
-    extends OperationImpl.Abstract with SubUpstreamHandling {
+    extends OperationImpl.DefaultWithSecondaryDownstream {
 
-  val downstream2 = ctx.requestSubDownstream(this)
+  val downstream2 = requestSecondaryDownstream()
   secondary(downstream2)
 
   var requested1 = 0
@@ -51,12 +50,12 @@ class Unzip(secondary: Producer[Any] ⇒ Unit)(implicit val upstream: Upstream, 
     downstream2.onError(cause)
   }
 
-  def subRequestMore(elements: Int): Unit = {
+  override def secondaryRequestMore(elements: Int): Unit = {
     requested2 += elements
     requestMoreIfPossible()
   }
 
-  def subCancel(): Unit = upstream.cancel()
+  override def secondaryCancel(): Unit = upstream.cancel()
 
   private def requestMoreIfPossible(): Unit =
     math.min(requested1, requested2) match {

@@ -17,7 +17,7 @@
 package waves.impl
 package ops
 
-class Identity(val upstream: Upstream, val downstream: Downstream) extends OperationImpl.Abstract {
+class Identity(val upstream: Upstream, val downstream: Downstream) extends OperationImpl.Default {
 
   override def onNext(element: Any) = downstream.onNext(element)
 

@@ -18,18 +18,17 @@ package waves
 package impl
 package ops
 
-import OperationProcessor.SubUpstreamHandling
 import Operation.Split._
 
 class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream: Downstream,
                               ctx: OperationProcessor.Context)
-    extends OperationImpl.Stateful {
+    extends OperationImpl.StatefulWithSecondaryDownstream {
 
   var mainRequested = 0
   var upstreamCompleted = false
   var upstreamError: Option[Throwable] = None
 
-  abstract class BehaviorWithOnNext extends BehaviorWithSubUpstreamHandling {
+  abstract class BehaviorWithOnNext extends Behavior {
     override def onNext(element: Any) =
       f(element) match {
         case Drop   ⇒ upstream.requestMore(1)
@@ -42,14 +41,15 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
     def onNextFirst(element: Any): Unit
   }
 
-  class WaitingForRequestMore(firstElementOfNextSubstream: Any) extends BehaviorWithSubUpstreamHandling {
-    override def requestMore(elements: Int): Unit = {
-      mainRequested = elements
-      startBehavior.onNextFirst(firstElementOfNextSubstream)
+  def waitingForRequestMore(firstElementOfNextSubstream: Any): Behavior =
+    new Behavior {
+      override def requestMore(elements: Int): Unit = {
+        mainRequested = elements
+        startBehavior.onNextFirst(firstElementOfNextSubstream)
+      }
+      override def onComplete(): Unit = upstreamCompleted = true
+      override def onError(cause: Throwable): Unit = upstreamError = Some(cause)
     }
-    override def onComplete(): Unit = upstreamCompleted = true
-    override def onError(cause: Throwable): Unit = upstreamError = Some(cause)
-  }
 
   val startBehavior = behavior.asInstanceOf[BehaviorWithOnNext]
   def initialBehavior: BehaviorWithOnNext =
@@ -62,48 +62,48 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
       def onNextLast(element: Any): Unit = startNewSubstream(element, completeAfterFirstElement = true)
       def onNextFirst(element: Any): Unit = startNewSubstream(element, completeAfterFirstElement = false)
       def startNewSubstream(firstElement: Any, completeAfterFirstElement: Boolean): Unit = {
-        val substream = ctx.requestSubDownstream(behavior.asInstanceOf[SubUpstreamHandling])
-        become(new WaitingForSubstreamRequestMore(substream, firstElement, completeAfterFirstElement))
+        val downstream2 = requestSecondaryDownstream()
+        become(waitingForSubstreamRequestMore(downstream2, firstElement, completeAfterFirstElement))
         mainRequested -= 1
-        downstream.onNext(substream)
+        downstream.onNext(downstream2)
         if (upstreamCompleted) downstream.onComplete()
         else if (upstreamError.isDefined) downstream.onError(upstreamError.get)
       }
     }
 
-  class WaitingForSubstreamRequestMore(substream: Downstream, firstElement: Any,
-                                       completeAfterFirstElement: Boolean) extends BehaviorWithSubUpstreamHandling {
-    override def requestMore(elements: Int): Unit = mainRequested += elements
-    override def cancel(): Unit =
-      if (!upstreamCompleted && upstreamError.isEmpty) {
+  def waitingForSubstreamRequestMore(downstream2: Downstream, firstElement: Any, completeAfterFirstElement: Boolean): Behavior =
+    new Behavior {
+      override def requestMore(elements: Int): Unit = mainRequested += elements
+      override def cancel(): Unit =
+        if (!upstreamCompleted && upstreamError.isEmpty) {
+          upstreamCompleted = true
+          upstream.cancel()
+        }
+      override def onComplete(): Unit = {
         upstreamCompleted = true
-        upstream.cancel()
+        downstream.onComplete()
       }
-    override def onComplete(): Unit = {
-      upstreamCompleted = true
-      downstream.onComplete()
-    }
-    override def onError(cause: Throwable): Unit = {
-      upstreamError = Some(cause)
-      downstream.onError(cause)
-    }
-    override def subRequestMore(elements: Int): Unit = {
-      val behavior = new InSubstream(substream, elements)
-      become(behavior)
-      if (completeAfterFirstElement) behavior.onNextLast(firstElement)
-      else behavior.onNextAppend(firstElement)
-    }
-    override def subCancel(): Unit =
-      if (!upstreamCompleted && upstreamError.isEmpty) {
-        // the sub-downstream was cancelled before we were able to push the first element,
-        // in this case we follow the principle of not dropping elements if possible, so
-        // we treat the element as the first one of the next sub-stream
-        if (mainRequested > 0) {
-          become(startBehavior)
-          upstream.requestMore(1)
-        } else become(new WaitingForRequestMore(firstElement))
+      override def onError(cause: Throwable): Unit = {
+        upstreamError = Some(cause)
+        downstream.onError(cause)
       }
-  }
+      override def secondaryRequestMore(elements: Int): Unit = {
+        val behavior = new InSubstream(downstream2, elements)
+        become(behavior)
+        if (completeAfterFirstElement) behavior.onNextLast(firstElement)
+        else behavior.onNextAppend(firstElement)
+      }
+      override def secondaryCancel(): Unit =
+        if (!upstreamCompleted && upstreamError.isEmpty) {
+          // the sub-downstream was cancelled before we were able to push the first element,
+          // in this case we follow the principle of not dropping elements if possible, so
+          // we treat the element as the first one of the next sub-stream
+          if (mainRequested > 0) {
+            become(startBehavior)
+            upstream.requestMore(1)
+          } else become(waitingForRequestMore(firstElement))
+        }
+    }
 
   class InSubstream(substream: Downstream, var subRequested: Int) extends BehaviorWithOnNext {
     var downstreamCancelled = false
@@ -130,7 +130,7 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
       substream.onComplete()
       if (downstreamCancelled) upstream.cancel()
       else if (mainRequested > 0) startBehavior.onNextFirst(element)
-      else become(new WaitingForRequestMore(element))
+      else become(waitingForRequestMore(element))
     }
     override def onComplete(): Unit = {
       substream.onComplete()
@@ -140,11 +140,11 @@ class Split(f: Any ⇒ Command)(implicit val upstream: Upstream, val downstream:
       substream.onError(cause)
       downstream.onError(cause)
     }
-    override def subRequestMore(elements: Int): Unit = {
+    override def secondaryRequestMore(elements: Int): Unit = {
       subRequested += elements
       if (subRequested == elements) upstream.requestMore(1)
     }
-    override def subCancel(): Unit = unbecomeInSubstream()
+    override def secondaryCancel(): Unit = unbecomeInSubstream()
 
     private def unbecomeInSubstream(): Unit =
       if (downstreamCancelled) {

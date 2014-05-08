@@ -23,7 +23,7 @@ import org.reactivestreams.spi.Publisher
 import scala.util.control.NoStackTrace
 import org.specs2.mutable.Specification
 import org.specs2.matcher.Scope
-import OperationProcessor.{ SubUpstreamHandling, SubDownstreamHandling }
+import OperationImpl.{ WithSecondaryDownstreamBehavior, WithSecondaryUpstreamBehavior }
 
 abstract class OperationImplSpec extends Specification {
 
@@ -43,7 +43,7 @@ abstract class OperationImplSpec extends Specification {
       expectNoNext()
       expectNoComplete()
       expectNoError()
-      expectNoRequestSubUpstream()
+      expectNoRequestSecondaryUpstream()
       verifiedForCleanExit foreach {
         case Left(substream) ⇒
           substream.expectNoRequestMore()
@@ -59,17 +59,17 @@ abstract class OperationImplSpec extends Specification {
     def operation: Operation[A, B]
 
     private[OperationImplSpec] var verifiedForCleanExit = Seq.empty[Either[MockUpstream, MockDownstream]]
+    private var requestSecondaryUpstreamCalls = Seq.empty[(Producer[_ <: Any], WithSecondaryDownstreamBehavior)]
     private val chain = new OperationChain(operation, processorContext)
-    private var requestSubUpstreamCalls = Seq.empty[(Producer[_ <: Any], () ⇒ SubDownstreamHandling)]
 
     chain.connectUpstream(upstream)
     chain.connectDownstream(downstream)
 
     private def processorContext: OperationProcessor.Context =
       new OperationProcessor.Context {
-        def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit =
-          requestSubUpstreamCalls :+= producer -> subDownstream _
-        def requestSubDownstream(subUpstream: ⇒ SubUpstreamHandling): Producer[Any] with Downstream =
+        def requestSecondaryUpstream[T <: Any](producer: Producer[T], impl: WithSecondaryDownstreamBehavior): Unit =
+          requestSecondaryUpstreamCalls :+= producer -> impl
+        def requestSecondaryDownstream(impl: WithSecondaryUpstreamBehavior): Producer[Any] with Downstream =
           new Producer[Any] with Downstream with MockDownstream {
             verifiedForCleanExit :+= Right(this)
             def getPublisher: Publisher[Any] = throw new IllegalStateException // should never be called in a test
@@ -77,24 +77,24 @@ abstract class OperationImplSpec extends Specification {
             def onNext(element: Any): Unit = downstream.onNext(element)
             def onComplete(): Unit = downstream.onComplete()
             def onError(cause: Throwable): Unit = downstream.onError(cause)
-            def requestMore(counts: Int*): Unit = counts.foreach(subUpstream.subRequestMore)
-            def cancel(): Unit = subUpstream.subCancel()
+            def requestMore(counts: Int*): Unit = counts.foreach(impl.behavior.secondaryRequestMore)
+            def cancel(): Unit = impl.behavior.secondaryCancel()
           }
       }
 
-    def expectRequestSubUpstream(producer: Producer[_ <: Any]): SubDownstreamInterface =
-      requestSubUpstreamCalls match {
-        case Seq((`producer`, subDownstreamHandling)) ⇒
-          requestSubUpstreamCalls = Nil
-          val mockUpstream = new SubDownstreamInterface(subDownstreamHandling)
+    def expectRequestSecondaryUpstream(producer: Producer[_ <: Any]): SubDownstreamInterface =
+      requestSecondaryUpstreamCalls match {
+        case Seq((`producer`, impl)) ⇒
+          requestSecondaryUpstreamCalls = Nil
+          val mockUpstream = new SubDownstreamInterface(impl)
           verifiedForCleanExit :+= Left(mockUpstream)
           mockUpstream
-        case x ⇒ fail(s"Expected ${callsToString("requestSubUpstream", Seq(producer))} but got " +
-          callsToString("requestSubUpstream", x.map(_._1)))
+        case x ⇒ fail(s"Expected ${callsToString("requestSecondaryUpstream", Seq(producer))} but got " +
+          callsToString("requestSecondaryUpstream", x.map(_._1)))
       }
-    def expectNoRequestSubUpstream(): Unit =
-      if (requestSubUpstreamCalls.nonEmpty)
-        fail("Unexpected calls: " + callsToString("requestSubUpstream", requestSubUpstreamCalls.map(_._1)))
+    def expectNoRequestSecondaryUpstream(): Unit =
+      if (requestSecondaryUpstreamCalls.nonEmpty)
+        fail("Unexpected calls: " + callsToString("requestSecondaryUpstream", requestSecondaryUpstreamCalls.map(_._1)))
 
     def requestMore(counts: Int*): Unit = counts.foreach(chain.rightUpstream.requestMore)
     def cancel(): Unit = chain.rightUpstream.cancel()
@@ -104,11 +104,11 @@ abstract class OperationImplSpec extends Specification {
     def onError(cause: Throwable): Unit = chain.leftDownstream.onError(cause)
   }
 
-  class SubDownstreamInterface(sdh: () ⇒ SubDownstreamHandling) extends MockUpstream {
-    def onSubscribe(): Unit = sdh().subOnSubscribe(upstream)
-    def onNext(elements: Any*): Unit = elements.foreach(sdh().subOnNext)
-    def onComplete(): Unit = sdh().subOnComplete()
-    def onError(cause: Throwable): Unit = sdh().subOnError(cause)
+  class SubDownstreamInterface(impl: WithSecondaryDownstreamBehavior) extends MockUpstream {
+    def onSubscribe(): Unit = impl.behavior.secondaryOnSubscribe(upstream)
+    def onNext(elements: Any*): Unit = elements.foreach(impl.behavior.secondaryOnNext)
+    def onComplete(): Unit = impl.behavior.secondaryOnComplete()
+    def onError(cause: Throwable): Unit = impl.behavior.secondaryOnError(cause)
   }
 
   trait MockUpstream {

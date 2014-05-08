@@ -20,7 +20,7 @@ package ops
 import scala.annotation.tailrec
 
 class Buffer(size: Int)(implicit val upstream: Upstream, val downstream: Downstream)
-    extends OperationImpl.Abstract {
+    extends OperationImpl.Default {
   import Buffer._
 
   val queue = new RingBuffer[Any](size)

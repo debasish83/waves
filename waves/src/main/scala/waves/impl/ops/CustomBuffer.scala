@@ -23,7 +23,7 @@ class CustomBuffer(seed: Any,
                    compress: (Any, Any) ⇒ Any,
                    expand: Any ⇒ (Any, Option[Any]),
                    canConsume: Any ⇒ Boolean)(implicit val upstream: Upstream, val downstream: Downstream)
-    extends OperationImpl.Abstract {
+    extends OperationImpl.Default {
 
   var requested = 0
   var state = seed

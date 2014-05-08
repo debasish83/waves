@@ -17,7 +17,7 @@
 package waves.impl
 package ops
 
-class Drop(count: Int)(implicit val upstream: Upstream, val downstream: Downstream) extends OperationImpl.Abstract {
+class Drop(count: Int)(implicit val upstream: Upstream, val downstream: Downstream) extends OperationImpl.Default {
 
   require(count >= 0)
 

@@ -18,13 +18,12 @@ package waves.impl
 package ops
 
 import org.reactivestreams.api.Producer
-import waves.impl.OperationProcessor.SubUpstreamHandling
 
 class Tee(secondary: Producer[Any] ⇒ Unit)(implicit val upstream: Upstream, val downstream: Downstream,
                                            ctx: OperationProcessor.Context)
-    extends OperationImpl.Abstract with SubUpstreamHandling {
+    extends OperationImpl.DefaultWithSecondaryDownstream {
 
-  val downstream2 = ctx.requestSubDownstream(this)
+  val downstream2 = requestSecondaryDownstream()
   secondary(downstream2)
 
   var requested1 = 0
@@ -58,12 +57,12 @@ class Tee(secondary: Producer[Any] ⇒ Unit)(implicit val upstream: Upstream, va
     if (!cancelled2) downstream2.onError(cause)
   }
 
-  def subRequestMore(elements: Int): Unit = {
+  override def secondaryRequestMore(elements: Int): Unit = {
     requested2 += elements
     requestMoreIfPossible()
   }
 
-  def subCancel(): Unit = {
+  override def secondaryCancel(): Unit = {
     cancelled2 = true
     if (cancelled1) upstream.cancel()
     else requestMoreIfPossible()

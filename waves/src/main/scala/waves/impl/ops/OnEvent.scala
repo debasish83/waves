@@ -21,7 +21,7 @@ import scala.util.control.NonFatal
 import waves.Operation.StreamEvent
 
 class OnEvent(callback: StreamEvent[Any] ⇒ Unit)(implicit val upstream: Upstream, val downstream: Downstream)
-    extends OperationImpl.Abstract {
+    extends OperationImpl.Default {
 
   override def requestMore(elements: Int) = {
     dispatch(StreamEvent.RequestMore(elements))

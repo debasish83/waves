@@ -23,8 +23,7 @@ import org.reactivestreams.api.{ Consumer, Producer, Processor }
 import org.reactivestreams.spi
 import spi.{ Publisher, Subscription, Subscriber }
 
-class OperationProcessor[I, O](op: Operation[I, O])(implicit ec: ExecutionContext)
-    extends Processor[I, O] {
+class OperationProcessor[I, O](op: Operation[I, O])(implicit ec: ExecutionContext) extends Processor[I, O] {
   import OperationProcessor._
 
   private val actor: SimpleActor = {
@@ -64,24 +63,9 @@ object OperationProcessor {
   private case class RequestMore(elements: Int)
   private case object Cancel
 
-  // other messages
-  private case class Job(thunk: () ⇒ Unit)
-
   trait Context {
-    def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit
-    def requestSubDownstream(subUpstream: ⇒ SubUpstreamHandling): Producer[Any] with Downstream
-  }
-
-  trait SubDownstreamHandling {
-    def subOnSubscribe(subUpstream: Upstream): Unit
-    def subOnNext(element: Any): Unit
-    def subOnComplete(): Unit
-    def subOnError(cause: Throwable): Unit
-  }
-
-  trait SubUpstreamHandling {
-    def subRequestMore(elements: Int): Unit
-    def subCancel(): Unit
+    def requestSecondaryUpstream[T <: Any](producer: Producer[T], impl: OperationImpl.WithSecondaryDownstreamBehavior): Unit
+    def requestSecondaryDownstream(impl: OperationImpl.WithSecondaryUpstreamBehavior): Producer[Any] with Downstream
   }
 
   // Actor providing execution logic around an `OperationChain`
@@ -98,7 +82,7 @@ object OperationProcessor {
       case RequestMore(elements)     ⇒ chain.rightUpstream.requestMore(elements)
       case Cancel                    ⇒ chain.rightUpstream.cancel()
 
-      case Job(thunk)                ⇒ thunk()
+      case job: Function0[_]         ⇒ job()
 
       case OnSubscribe(subscription) ⇒ chain.connectUpstream(subscription)
       case Subscribe(subscriber)     ⇒ connectDownstream(subscriber)
@@ -121,17 +105,18 @@ object OperationProcessor {
     def cancel() = this ! Cancel
 
     // Context interface
-    def requestSubUpstream[T <: Any](producer: Producer[T], subDownstream: ⇒ SubDownstreamHandling): Unit =
+
+    def requestSecondaryUpstream[T <: Any](producer: Producer[T], impl: OperationImpl.WithSecondaryDownstreamBehavior): Unit =
       producer.getPublisher.subscribe {
         new Subscriber[T] {
-          def onSubscribe(subscription: Subscription) = schedule(subDownstream.subOnSubscribe(subscription))
-          def onNext(element: T) = schedule(subDownstream.subOnNext(element))
-          def onComplete() = schedule(subDownstream.subOnComplete())
-          def onError(cause: Throwable) = schedule(subDownstream.subOnError(cause))
-          override def toString = s"SubUpstream($producer)"
+          def onSubscribe(subscription: Subscription) = schedule(impl.behavior.secondaryOnSubscribe(subscription))
+          def onNext(element: T) = schedule(impl.behavior.secondaryOnNext(element))
+          def onComplete() = schedule(impl.behavior.secondaryOnComplete())
+          def onError(cause: Throwable) = schedule(impl.behavior.secondaryOnError(cause))
+          override def toString = s"SecondaryUpstream($producer)"
         }
       }
-    def requestSubDownstream(subUpstream: ⇒ SubUpstreamHandling): Producer[Any] with Downstream =
+    def requestSecondaryDownstream(impl: OperationImpl.WithSecondaryUpstreamBehavior): Producer[Any] with Downstream =
       new AtomicReference[Subscriber[Any]] with AbstractProducer[Any] with Subscription with Downstream {
         def subscribe(subscriber: Subscriber[Any]) =
           if (compareAndSet(null, subscriber)) subscriber.onSubscribe(this)
@@ -142,12 +127,12 @@ object OperationProcessor {
         def onError(cause: Throwable) = get.onError(cause)
 
         // outside upstream interface facing downstream, called from another thread
-        def requestMore(elements: Int) = schedule(subUpstream.subRequestMore(elements))
-        def cancel() = schedule(subUpstream.subCancel())
-        override def toString = s"SubDownstream(${Option(get) getOrElse "<unsubscribed>"}"
+        def requestMore(elements: Int) = schedule(impl.behavior.secondaryRequestMore(elements))
+        def cancel() = schedule(impl.behavior.secondaryCancel())
+        override def toString = s"SecondaryDownstream(${Option(get) getOrElse "<unsubscribed>"}"
       }
 
     // helpers
-    def schedule(body: ⇒ Unit): Unit = this ! Job(body _)
+    def schedule(body: ⇒ Unit): Unit = this ! body _
   }
 }

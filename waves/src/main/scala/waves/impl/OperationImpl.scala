@@ -18,17 +18,40 @@ package waves
 package impl
 
 import org.reactivestreams.api.Producer
-import OperationProcessor.{ SubUpstreamHandling, SubDownstreamHandling }
-import sun.reflect.generics.reflectiveObjects.NotImplementedException
 
 trait OperationImpl extends Downstream with Upstream
 
 object OperationImpl {
+
+  trait SecondaryDownstream {
+    def secondaryOnSubscribe(upstream2: Upstream): Unit = throw new IllegalStateException(s"Unexpected `subOnSubscribe($upstream2)` in $this")
+    def secondaryOnNext(element: Any): Unit = throw new IllegalStateException(s"Unexpected `subOnNext($element)` in $this")
+    def secondaryOnComplete(): Unit = throw new IllegalStateException("Unexpected `subOnComplete` in $this")
+    def secondaryOnError(cause: Throwable): Unit = throw new IllegalStateException(s"Unexpected `subOnError($cause)` in $this")
+  }
+
+  trait SecondaryUpstream {
+    def secondaryRequestMore(elements: Int): Unit = throw new IllegalStateException(s"Unexpected `subRequestMore($elements)` in $this")
+    def secondaryCancel(): Unit = throw new IllegalStateException(s"Unexpected `subCancel()` in $this")
+  }
+
+  trait WithSecondaryUpstreamBehavior {
+    def behavior: SecondaryUpstream
+    def requestSecondaryDownstream()(implicit ctx: OperationProcessor.Context): Producer[Any] with Downstream =
+      ctx.requestSecondaryDownstream(this)
+  }
+
+  trait WithSecondaryDownstreamBehavior {
+    def behavior: SecondaryDownstream
+    def requestSecondaryUpstream(producer: Producer[Any])(implicit ctx: OperationProcessor.Context): Unit =
+      ctx.requestSecondaryUpstream(producer, this)
+  }
+
   // base class with default implementations that simply forward through the chain,
   // is allowed to synchronously call its upstream and/or downstream peers with one exception:
   // in a call to `downstream.onNext` the `requestMore` method MUST NOT re-enter into `downstream.onNext`
   // (but somehow collect the request element count for later evaluation)
-  abstract class Abstract extends OperationImpl {
+  abstract class Default extends OperationImpl {
     def upstream: Upstream
     def downstream: Downstream
     def onNext(element: Any): Unit = throw new IllegalStateException(s"Unrequested `onNext($element)` in $this")
@@ -38,13 +61,19 @@ object OperationImpl {
     def cancel() = upstream.cancel()
   }
 
-  // OperationImpl base class sporting `become`
-  abstract class Stateful extends OperationImpl { outer ⇒
+  abstract class DefaultWithSecondaryDownstream extends Default with WithSecondaryUpstreamBehavior with SecondaryUpstream {
+    def behavior: SecondaryUpstream = this
+  }
+
+  abstract class AbstractStateful extends OperationImpl { outer ⇒
     def upstream: Upstream
     def downstream: Downstream
-    def initialBehavior: OperationImpl // cannot be implemented with a val due to initialization order!
-    var behavior: OperationImpl = initialBehavior
-    def become(next: OperationImpl): Unit = behavior = next
+    type Behavior <: AbstractBehavior
+
+    def initialBehavior: Behavior // cannot be implemented with a val due to initialization order!
+    private[this] var _behavior: Behavior = initialBehavior
+    def behavior: Behavior = _behavior
+    def become(next: Behavior): Unit = _behavior = next
 
     def onNext(element: Any) = behavior.onNext(element)
     def onComplete() = behavior.onComplete()
@@ -52,23 +81,24 @@ object OperationImpl {
     def requestMore(elements: Int) = behavior.requestMore(elements)
     def cancel() = behavior.cancel()
 
-    // helper classes for easier stateful behavior definition
-    class Behavior extends Abstract {
+    abstract class AbstractBehavior extends Default {
       def upstream = outer.upstream
       def downstream = outer.downstream
     }
+  }
 
-    class BehaviorWithSubDownstreamHandling extends Behavior with SubDownstreamHandling {
-      def subOnSubscribe(subUpstream: Upstream): Unit = throw new IllegalStateException(s"Unexpected `subOnSubscribe($subUpstream)` in $this")
-      def subOnNext(element: Any): Unit = throw new IllegalStateException(s"Unexpected `subOnNext($element)` in $this")
-      def subOnComplete(): Unit = throw new IllegalStateException("Unexpected `subOnComplete` in $this")
-      def subOnError(cause: Throwable): Unit = throw new IllegalStateException(s"Unexpected `subOnError($cause)` in $this")
-    }
+  abstract class Stateful extends AbstractStateful {
+    type Behavior = AbstractBehavior
+  }
 
-    class BehaviorWithSubUpstreamHandling extends Behavior with SubUpstreamHandling {
-      def subRequestMore(elements: Int): Unit = throw new IllegalStateException(s"Unexpected `subRequestMore($elements)` in $this")
-      def subCancel(): Unit = throw new IllegalStateException(s"Unexpected `subCancel()` in $this")
-    }
+  abstract class StatefulWithSecondaryUpstream extends AbstractStateful with WithSecondaryDownstreamBehavior { outer ⇒
+    type Behavior = BehaviorBase
+    abstract class BehaviorBase extends AbstractBehavior with SecondaryDownstream
+  }
+
+  abstract class StatefulWithSecondaryDownstream extends AbstractStateful with WithSecondaryUpstreamBehavior { outer ⇒
+    type Behavior = BehaviorBase
+    abstract class BehaviorBase extends AbstractBehavior with SecondaryUpstream
   }
 
   import Operation._

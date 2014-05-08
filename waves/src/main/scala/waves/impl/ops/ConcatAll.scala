@@ -18,17 +18,16 @@ package waves.impl
 package ops
 
 import org.reactivestreams.api.Producer
-import OperationProcessor.SubDownstreamHandling
 
 class ConcatAll(implicit val upstream: Upstream, val downstream: Downstream, ctx: OperationProcessor.Context)
-    extends OperationImpl.Stateful {
+    extends OperationImpl.StatefulWithSecondaryUpstream {
 
   var requested = 0
   var upstreamCompleted = false
   val startBehavior = behavior
 
-  def initialBehavior: BehaviorWithSubDownstreamHandling =
-    new BehaviorWithSubDownstreamHandling {
+  def initialBehavior: Behavior =
+    new Behavior {
       override def requestMore(elements: Int): Unit = {
         requested += elements
         if (requested == elements) upstream.requestMore(1)
@@ -36,63 +35,64 @@ class ConcatAll(implicit val upstream: Upstream, val downstream: Downstream, ctx
       override def onNext(element: Any) =
         element match {
           case producer: Producer[_] ⇒
-            become(new WaitingForSubstreamSubscription)
-            ctx.requestSubUpstream(producer.asInstanceOf[Producer[Any]], behavior.asInstanceOf[SubDownstreamHandling])
+            become(waitingForSubstreamSubscription)
+            requestSecondaryUpstream(producer.asInstanceOf[Producer[Any]])
           case _ ⇒ sys.error("Illegal operation setup, expected `Producer[_]` but got " + element)
         }
     }
 
-  class WaitingForSubstreamSubscription extends BehaviorWithSubDownstreamHandling {
-    var cancelled = false
-    var error: Option[Throwable] = None
-    override def requestMore(elements: Int) = requested += elements
-    override def cancel() = {
-      upstream.cancel()
-      cancelled = true
-    }
-    override def onComplete() = upstreamCompleted = true
-    override def onError(cause: Throwable) = error = Some(cause)
-
-    override def subOnSubscribe(subUpstream: Upstream) =
-      if (cancelled) {
-        subUpstream.cancel()
-      } else {
-        become(new Draining(subUpstream, error))
-        subUpstream.requestMore(requested)
+  def waitingForSubstreamSubscription: Behavior =
+    new Behavior {
+      var cancelled = false
+      var error: Option[Throwable] = None
+      override def requestMore(elements: Int) = requested += elements
+      override def cancel() = {
+        upstream.cancel()
+        cancelled = true
       }
-    override def subOnComplete() = finishSubstream(error)
-    // else if we were cancelled while waiting for the subscription and the sub stream is empty we are done
-    override def subOnError(cause: Throwable) = {
-      downstream.onError(cause)
-      upstream.cancel()
+      override def onComplete() = upstreamCompleted = true
+      override def onError(cause: Throwable) = error = Some(cause)
+
+      override def secondaryOnSubscribe(upstream2: Upstream) =
+        if (cancelled) {
+          upstream2.cancel()
+        } else {
+          become(new Draining(upstream2, error))
+          upstream2.requestMore(requested)
+        }
+      override def secondaryOnComplete() = finishSubstream(error)
+      // else if we were cancelled while waiting for the subscription and the sub stream is empty we are done
+      override def secondaryOnError(cause: Throwable) = {
+        downstream.onError(cause)
+        upstream.cancel()
+      }
     }
-  }
 
   // when we enter this state we have already requested `requested` elements from the subUpstream
-  class Draining(subUpstream: Upstream, var error: Option[Throwable]) extends BehaviorWithSubDownstreamHandling {
+  class Draining(upstream2: Upstream, var error: Option[Throwable]) extends Behavior {
     override def requestMore(elements: Int): Unit = {
       requested += elements
-      subUpstream.requestMore(elements)
+      upstream2.requestMore(elements)
     }
     override def cancel(): Unit = {
-      subUpstream.cancel()
+      upstream2.cancel()
       upstream.cancel()
     }
     override def onComplete(): Unit = upstreamCompleted = true
     override def onError(cause: Throwable): Unit = error = Some(cause)
 
-    override def subOnNext(element: Any): Unit = {
+    override def secondaryOnNext(element: Any): Unit = {
       requested -= 1
       downstream.onNext(element)
     }
-    override def subOnComplete(): Unit = finishSubstream(error)
-    override def subOnError(cause: Throwable): Unit = {
+    override def secondaryOnComplete(): Unit = finishSubstream(error)
+    override def secondaryOnError(cause: Throwable): Unit = {
       upstream.cancel()
       downstream.onError(cause)
     }
   }
 
-  def finishSubstream(error: Option[Throwable]): Unit = {
+  def finishSubstream(error: Option[Throwable]): Unit =
     if (upstreamCompleted) {
       downstream.onComplete()
     } else if (error.isDefined) {
@@ -101,5 +101,4 @@ class ConcatAll(implicit val upstream: Upstream, val downstream: Downstream, ctx
       become(startBehavior)
       if (requested > 0) upstream.requestMore(1)
     }
-  }
 }

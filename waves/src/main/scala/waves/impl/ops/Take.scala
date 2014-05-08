@@ -17,7 +17,7 @@
 package waves.impl
 package ops
 
-class Take(count: Int)(implicit val upstream: Upstream, val downstream: Downstream) extends OperationImpl.Abstract {
+class Take(count: Int)(implicit val upstream: Upstream, val downstream: Downstream) extends OperationImpl.Default {
   require(count > 0)
 
   var stillToBeRequested = count
