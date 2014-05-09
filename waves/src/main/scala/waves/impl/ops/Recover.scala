@@ -20,15 +20,11 @@ package ops
 import scala.util.control.NonFatal
 import org.reactivestreams.api.Producer
 
-class Recover(pf: PartialFunction[Throwable, Producer[Any]])(implicit val upstream: Upstream,
-                                                             val downstream: Downstream,
-                                                             ctx: OperationProcessor.Context)
-    extends OperationImpl.StatefulWithSecondaryUpstream with (Throwable ⇒ Nothing) {
-
-  def apply(error: Throwable): Nothing = throw error
+class Recover(pf: PartialFunction[Throwable, Producer[Any]])(implicit us: Upstream, ds: Downstream, ctx: OperationProcessor.Context)
+    extends StatefulWithUpstream2Draining {
 
   def initialBehavior: Behavior =
-    new Behavior {
+    new Behavior with (Throwable ⇒ Nothing) {
       var requested = 0
       override def requestMore(elements: Int): Unit = {
         requested += elements
@@ -39,38 +35,14 @@ class Recover(pf: PartialFunction[Throwable, Producer[Any]])(implicit val upstre
         downstream.onNext(element)
       }
       override def onError(cause: Throwable): Unit = {
-        become(new WaitingForSecondFlowSubscription(requested))
+        become(new DrainingSecondaryUpstream(requested))
         try {
-          val producer = pf.applyOrElse(cause, Recover.this)
+          val producer = pf.applyOrElse(cause, this)
           requestSecondaryUpstream(producer)
         } catch {
           case NonFatal(e) ⇒ downstream.onError(e)
         }
       }
-    }
-
-  class WaitingForSecondFlowSubscription(var requested: Int) extends Behavior {
-    var cancelled = false
-    override def requestMore(elements: Int) = requested += elements
-    override def cancel() = cancelled = true
-    override def secondaryOnSubscribe(upstream2: Upstream) =
-      if (cancelled) {
-        upstream2.cancel()
-      } else {
-        become(draining(upstream2))
-        upstream2.requestMore(requested)
-      }
-    override def secondaryOnComplete() = downstream.onComplete()
-    override def secondaryOnError(cause: Throwable) = downstream.onError(cause)
-  }
-
-  // when we enter this state we have already requested all so far requested elements from upstream2
-  def draining(upstream2: Upstream): Behavior =
-    new Behavior {
-      override def requestMore(elements: Int) = upstream2.requestMore(elements)
-      override def cancel() = upstream2.cancel()
-      override def secondaryOnNext(element: Any) = downstream.onNext(element)
-      override def secondaryOnComplete() = downstream.onComplete()
-      override def secondaryOnError(cause: Throwable) = downstream.onError(cause)
+      def apply(error: Throwable): Nothing = throw error
     }
 }

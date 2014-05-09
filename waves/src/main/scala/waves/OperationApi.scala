@@ -16,30 +16,30 @@
 
 package waves
 
+import java.util.NoSuchElementException
 import scala.language.{ higherKinds, implicitConversions }
 import scala.util.control.NonFatal
 import scala.util.{ Failure, Success, Try }
 import scala.concurrent.ExecutionContext
-import org.reactivestreams.api.{ Consumer, Producer }
+import scala.collection.immutable
+import org.reactivestreams.api.Producer
 import Operation._
 
-trait OperationApi[A] extends Any {
+trait OperationApi[A, Res[_]] extends Any {
   import OperationApi._
-
-  type Res[_]
 
   def append[B](next: A ==> B): Res[B]
 
+  implicit def res2Api[T](res: Res[T]): OperationApi[T, Res]
+
   // appends a simple buffer element which eagerly requests from upstream and
   // dispatches to downstream up to the given max buffer size
-  def buffer(size: Int): Res[A] = {
-    require(Integer.lowestOneBit(size) == size, "size must be a power of 2")
+  def buffer(size: Int): Res[A] =
     append(Buffer(size))
-  }
 
   // appends the given flow to the end of this stream
-  def concat(next: ⇒ Producer[A]): Res[A] =
-    append(Concat(next _))
+  def concat[AA >: A](next: ⇒ Producer[_ <: AA]): Res[AA] =
+    append(Concat[A, AA](next _))
 
   // filters the stream with a partial function and maps to its results
   def collect[B](pf: PartialFunction[A, B]): Res[B] =
@@ -52,20 +52,6 @@ trait OperationApi[A] extends Any {
       }
     }
 
-  // completes the stream (and cancels the upstream) after the first element for
-  // which the given function returns true
-  def completeAfter(f: A ⇒ Boolean): Res[A] =
-    transform {
-      new Transformer[A, A] {
-        private[this] var complete = false
-        override def isComplete = complete
-        def onNext(elem: A) = {
-          complete = f(elem)
-          elem :: Nil
-        }
-      }
-    }
-
   // flattens the upstream by concatenation
   // only available if the stream elements are themselves producable as a Producer[B]
   def concatAll[B](implicit ev: Producable[A, B]): Res[B] =
@@ -74,7 +60,9 @@ trait OperationApi[A] extends Any {
   // alternative `concatAll` implementation
   def concatAll2[B](implicit ev: Producable[A, B], ec: ExecutionContext): Res[B] =
     outerMap[B] {
-      case Producable(FanOut.Tee(p1, p2)) ⇒ Flow(p1).head.concat(Flow(p2).tail.concatAll2.toProducer).toProducer
+      case Producable(FanOut.Tee(p1, p2)) ⇒
+        val tail = Flow(p2).tail.toProducer
+        Flow(p1).head.concat(Flow(tail).concatAll2.toProducer).toProducer
     }
 
   // "compresses" a fast upstream by keeping one element buffered and reducing surplus values using the given function
@@ -104,6 +92,11 @@ trait OperationApi[A] extends Any {
   // consumes the first n upstream values at max rate, afterwards directly copies upstream
   def drop(n: Int): Res[A] =
     append(Drop(n))
+
+  // drop the last n upstream values
+  // NOTE: this operation has to buffer n elements and will only start producing the first
+  // element after n + 1 elements have been received from upstream
+  def dropLast(n: Int): Res[A] = ??? // TODO: ringbuffer-based implementation
 
   // produces one boolean for the first T that satisfies p
   // consumes at max rate until p(t) becomes true, unsubscribes afterwards
@@ -141,6 +134,42 @@ trait OperationApi[A] extends Any {
   def forAll(p: A ⇒ Boolean): Res[Boolean] =
     mapFind(x ⇒ if (!p(x)) SomeFalse else None, SomeTrue)
 
+  // groups the upstream elements into immutable seqs containing not more than the given number of items
+  def groupedIntoSeqs(n: Int): Res[immutable.Seq[A]] = {
+    require(n > 0, "n must be > 0")
+    transform {
+      new Transformer[A, immutable.Seq[A]] {
+        val builder = new immutable.VectorBuilder[A]
+        var count = 0
+        builder.sizeHint(n)
+        def onNext(elem: A) = {
+          builder += elem
+          count += 1
+          if (count == n) {
+            val group = builder.result()
+            builder.clear()
+            count = 0
+            group :: Nil
+          } else Nil
+        }
+        override def onComplete = if (count == 0) Nil else builder.result() :: Nil
+      }
+    }
+  }
+
+  // groups the upstream into sub-streams containing not more than the given number of items
+  def grouped(n: Int): Res[Producer[A]] = {
+    require(n > 0, "n must be > 0")
+    var count = 0
+    split { _ ⇒
+      count += 1
+      if (count == n) {
+        count = 0
+        Split.Last
+      } else Split.Append
+    }
+  }
+
   // "extracts" the first element
   // only available if the stream elements are themselves producable as a Producer[B]
   def head[B](implicit ev: Producable[A, B]): Res[B] =
@@ -152,14 +181,14 @@ trait OperationApi[A] extends Any {
     def headTail: A ⇒ Producer[(B, Producer[B])] = {
       case Producable(FanOut.Tee(p1, p2)) ⇒
         val tailStream = Flow(p2).tail.toProducer
-        Flow(p1).headStream.map(_ -> tailStream).toProducer
+        Flow(p1).take(1).map(_ -> tailStream).toProducer
     }
-    append(Map(headTail) ~> ConcatAll[Producer[(B, Producer[B])], (B, Producer[B])])
+    map(headTail).concatAll
   }
 
-  // produces the first upstream element, unsubscribes afterwards
-  def headStream: Res[A] =
-    append(Take(1))
+  // maps the upstream onto itself
+  def identity: Res[A] =
+    append(Identity())
 
   // maps the given function over the upstream
   def map[B](f: A ⇒ B): Res[B] =
@@ -167,14 +196,20 @@ trait OperationApi[A] extends Any {
 
   // combined map & concat operation
   def mapConcat[B, P](f: A ⇒ P)(implicit ev: Producable[P, B]): Res[B] =
-    append(Map[A, Producer[B]](a ⇒ ev(f(a))) ~> ConcatAll[Producer[B], B])
+    map(a ⇒ ev(f(a))).concatAll
 
   // produces the first A returned by f or optionally the given default value
   // consumes at max rate until f returns a Some, unsubscribes afterwards
   def mapFind[B](f: A ⇒ Option[B], default: ⇒ Option[B]): Res[B] =
     transform {
       new Transformer[A, B] {
-        def onNext(elem: A) = f(elem).toList
+        var _isComplete = false
+        override def isComplete = _isComplete
+        def onNext(elem: A) = {
+          val result = f(elem).toList
+          if (result.nonEmpty) _isComplete = true
+          result
+        }
         override def onComplete = default.toList
       }
     }
@@ -184,8 +219,8 @@ trait OperationApi[A] extends Any {
     append(Merge[A, AA](secondary))
 
   // merges the values produced by the given stream into the consumed stream
-  def mergeToEither[L](left: Producer[L]): Res[Either[L, A]] =
-    append(MergeToEither[L, A](left))
+  def mergeToEither[L](left: Producer[L])(implicit ec: ExecutionContext): Res[Either[L, A]] =
+    map(Right(_)).merge(Flow(left).map(Left(_)).toProducer)
 
   // repeats each element coming in from upstream `factor` times
   def multiply(factor: Int): Res[A] =
@@ -234,13 +269,31 @@ trait OperationApi[A] extends Any {
   def outerMap[B](f: Producer[A] ⇒ Producer[B]): Res[B] =
     append(OuterMap(f))
 
+  // partition the upstream in two downstreams based on the given function
+  def partition[L, R](secondary: Producer[L] ⇒ Unit)(f: A ⇒ Either[L, R])(implicit ec: ExecutionContext): Res[R] =
+    map(f).tee(p ⇒ secondary(Flow(p).collect { case Left(x) ⇒ x }.toProducer)).collect { case Right(x) ⇒ x }
+
   // debugging help: simply printlns all events passing through
   def printEvent(marker: String): Res[A] =
     onEvent(ev ⇒ println(s"$marker: $ev"))
 
   // lifts errors from upstream back into the main data flow before completing normally
-  def recover[B <: A, P](pf: PartialFunction[Throwable, P])(implicit ev: Producable[P, B]): Res[B] =
+  def recover[AA >: A, P](pf: PartialFunction[Throwable, P])(implicit ev: Producable[P, AA]): Res[AA] =
     append(Recover(pf andThen ev))
+
+  // reduces the upstream to a single element using the given function
+  def reduce[AA >: A](op: (AA, AA) ⇒ AA): Res[AA] =
+    transform {
+      new Transformer[A, AA] {
+        var acc: AA = NoValue.asInstanceOf[AA]
+        def onNext(elem: A) = {
+          acc = if (NoValue == acc) elem else op(acc, elem)
+          Nil
+        }
+        override def onComplete =
+          if (NoValue == acc) throw new NoSuchElementException else acc :: Nil
+      }
+    }
 
   // general stream transformation
   def transform[B](transformer: Transformer[A, B]): Res[B] =
@@ -248,11 +301,7 @@ trait OperationApi[A] extends Any {
 
   // lifts regular data and errors from upstream into a Try
   def tryRecover: Res[Try[A]] =
-    append {
-      Map[A, Try[A]](Success(_)) ~> Recover[Try[A], Try[A]] {
-        case NonFatal(e) ⇒ StreamProducer(Failure(e) :: Nil)
-      }
-    }
+    map[Try[A]](Success(_)).recover { case NonFatal(e) ⇒ List(Failure(e)) }
 
   // splits the upstream into sub-streams based on the commands produced by the given function,
   // never produces empty sub-streams
@@ -262,15 +311,11 @@ trait OperationApi[A] extends Any {
   // drops the first upstream value and forwards the remaining upstream
   // consumes the first upstream value immediately, afterwards directly copies upstream
   def tail: Res[A] =
-    append(Drop(1))
+    drop(1)
 
   // forwards the first n upstream values, unsubscribes afterwards
   def take(n: Int): Res[A] =
     append(Take[A](n))
-
-  // splits the upstream into two downstreams that will receive the exact same elements in the same sequence
-  def tee(consumer: Consumer[A]): Res[A] =
-    tee(_.produceTo(consumer))
 
   // splits the upstream into two downstreams that will receive the exact same elements in the same sequence
   def tee(secondary: Producer[A] ⇒ Unit): Res[A] =
@@ -287,7 +332,7 @@ trait OperationApi[A] extends Any {
     }
 
   // splits an upstream of tuples into two downstreams which each receive a tuple component
-  def unzip[T1, T2](secondary: Producer[T2] ⇒ Unit)(implicit ev: A =:= (T1, T2)): Res[T1] =
+  def unzip[T1, T2](secondary: Producer[T2] ⇒ Unit)(implicit ev: A <:< (T1, T2)): Res[T1] =
     append(Unzip[T1, T2](secondary).asInstanceOf[A ==> T1])
 
   // combines the upstream and the given flow into tuples

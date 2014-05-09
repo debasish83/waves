@@ -23,6 +23,8 @@ class Buffer(size: Int)(implicit val upstream: Upstream, val downstream: Downstr
     extends OperationImpl.Default {
   import Buffer._
 
+  require(Integer.lowestOneBit(size) == size && size >= 2, "size must be a power of 2 and >= 2")
+
   val queue = new RingBuffer[Any](size)
   var requested = 0
   var pendingFromUpstream = 0

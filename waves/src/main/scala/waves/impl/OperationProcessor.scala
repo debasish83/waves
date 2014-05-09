@@ -18,7 +18,7 @@ package waves
 package impl
 
 import scala.concurrent.ExecutionContext
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicBoolean
 import org.reactivestreams.api.{ Consumer, Producer, Processor }
 import org.reactivestreams.spi
 import spi.{ Publisher, Subscription, Subscriber }
@@ -70,33 +70,29 @@ object OperationProcessor {
 
   // Actor providing execution logic around an `OperationChain`
   private class Actor(op: OperationX)(implicit ec: ExecutionContext) extends SimpleActor with Subscription with Context {
-    val chain = new OperationChain(op, this)
+    private[this] val upstreamConnector = new UpstreamConnector
+    private[this] val downstreamConnector = new DownstreamConnector
+
+    materialize(op, upstreamConnector, downstreamConnector, this)
 
     startMessageProcessing()
 
     def apply(msg: AnyRef): Unit = msg match {
-      case OnNext(element)           ⇒ chain.leftDownstream.onNext(element)
-      case OnComplete                ⇒ chain.leftDownstream.onComplete()
-      case OnError(e)                ⇒ chain.leftDownstream.onError(e)
+      case OnNext(element)           ⇒ upstreamConnector.onNext(element)
+      case OnComplete                ⇒ upstreamConnector.onComplete()
+      case OnError(e)                ⇒ upstreamConnector.onError(e)
 
-      case RequestMore(elements)     ⇒ chain.rightUpstream.requestMore(elements)
-      case Cancel                    ⇒ chain.rightUpstream.cancel()
+      case RequestMore(elements)     ⇒ downstreamConnector.requestMore(elements)
+      case Cancel                    ⇒ downstreamConnector.cancel()
 
       case job: Function0[_]         ⇒ job()
 
-      case OnSubscribe(subscription) ⇒ chain.connectUpstream(subscription)
+      case OnSubscribe(subscription) ⇒ upstreamConnector.connectUpstream(subscription)
       case Subscribe(subscriber)     ⇒ connectDownstream(subscriber)
     }
 
     def connectDownstream(subscriber: Subscriber[Any]): Unit = {
-      chain.connectDownstream {
-        new Downstream {
-          def onNext(element: Any) = subscriber.onNext(element)
-          def onComplete() = subscriber.onComplete()
-          def onError(cause: Throwable) = subscriber.onError(cause)
-          override def toString = s"Downstream($subscriber)"
-        }
-      }
+      downstreamConnector.connectDownstream(Downstream(subscriber))
       subscriber.onSubscribe(this)
     }
 
@@ -105,30 +101,51 @@ object OperationProcessor {
     def cancel() = this ! Cancel
 
     // Context interface
-
-    def requestSecondaryUpstream[T <: Any](producer: Producer[T], impl: OperationImpl.WithSecondaryDownstreamBehavior): Unit =
+    def requestSecondaryUpstream[T <: Any](producer: Producer[T], impl: OperationImpl.WithSecondaryDownstreamBehavior): Unit = {
+      val connector = new UpstreamConnector
+      connector.connectDownstream {
+        new Downstream {
+          def onNext(element: Any) = impl.behavior.secondaryOnNext(element)
+          def onComplete() = impl.behavior.secondaryOnComplete()
+          def onError(cause: Throwable) = impl.behavior.secondaryOnError(cause)
+        }
+      }
       producer.getPublisher.subscribe {
         new Subscriber[T] {
-          def onSubscribe(subscription: Subscription) = schedule(impl.behavior.secondaryOnSubscribe(subscription))
-          def onNext(element: T) = schedule(impl.behavior.secondaryOnNext(element))
-          def onComplete() = schedule(impl.behavior.secondaryOnComplete())
-          def onError(cause: Throwable) = schedule(impl.behavior.secondaryOnError(cause))
+          def onSubscribe(subscription: Subscription) = schedule {
+            connector.connectUpstream(subscription)
+            impl.behavior.secondaryOnSubscribe(connector)
+          }
+          def onNext(element: T) = schedule(connector.onNext(element))
+          def onComplete() = schedule(connector.onComplete())
+          def onError(cause: Throwable) = schedule(connector.onError(cause))
           override def toString = s"SecondaryUpstream($producer)"
         }
       }
-    def requestSecondaryDownstream(impl: OperationImpl.WithSecondaryUpstreamBehavior): Producer[Any] with Downstream =
-      new AtomicReference[Subscriber[Any]] with AbstractProducer[Any] with Subscription with Downstream {
-        def subscribe(subscriber: Subscriber[Any]) =
-          if (compareAndSet(null, subscriber)) subscriber.onSubscribe(this)
-          else subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
+    }
 
-        def onNext(element: Any) = get.onNext(element)
-        def onComplete() = get.onComplete()
-        def onError(cause: Throwable) = get.onError(cause)
+    def requestSecondaryDownstream(impl: OperationImpl.WithSecondaryUpstreamBehavior): Producer[Any] with Downstream =
+      new AtomicBoolean with AbstractProducer[Any] with Subscription with Downstream {
+        val connector = new DownstreamConnector
+        connector.connectUpstream {
+          new Upstream {
+            def requestMore(elements: Int) = impl.behavior.secondaryRequestMore(elements)
+            def cancel() = impl.behavior.secondaryCancel()
+          }
+        }
+        def subscribe(subscriber: Subscriber[Any]) =
+          if (compareAndSet(false, true)) {
+            schedule(connector.connectDownstream(Downstream(subscriber)))
+            subscriber.onSubscribe(this)
+          } else subscriber.onError(new RuntimeException("Cannot subscribe more than one subscriber"))
+
+        def onNext(element: Any) = connector.onNext(element)
+        def onComplete() = connector.onComplete()
+        def onError(cause: Throwable) = connector.onError(cause)
 
         // outside upstream interface facing downstream, called from another thread
-        def requestMore(elements: Int) = schedule(impl.behavior.secondaryRequestMore(elements))
-        def cancel() = schedule(impl.behavior.secondaryCancel())
+        def requestMore(elements: Int) = schedule(connector.requestMore(elements))
+        def cancel() = schedule(connector.cancel())
         override def toString = s"SecondaryDownstream(${Option(get) getOrElse "<unsubscribed>"}"
       }
 

@@ -119,27 +119,12 @@ object StreamProducer {
    * If the future is already completed at the time of the first `subscription.requestMore` the
    * value is produced synchronously in `subscription.requestMore`.
    */
-  def apply[T](future: Future[T])(implicit executor: ExecutionContext): Producer[T] =
+  def apply[P, T](future: Future[P])(implicit ev: Producable[P, T], ec: ExecutionContext): Producer[T] =
     new AbstractProducer[T] {
       def subscribe(subscriber: Subscriber[T]) =
-        subscriber.onSubscribe {
-          new AtomicBoolean with Subscription {
-            def requestMore(elements: Int) = {
-              if (!get) // optimization: skip action if we already completed (not needed for correctness)
-                if (future.isCompleted) dispatch(future.value.get)
-                else future.onComplete(dispatch)
-            }
-            def cancel() = set(true)
-            def dispatch(value: Try[T]): Unit =
-              if (compareAndSet(false, true))
-                value match {
-                  case Success(x) ⇒
-                    subscriber.onNext(x)
-                    subscriber.onComplete()
-                  case Failure(error) ⇒ subscriber.onError(error)
-                }
-            override def toString = s"FutureProducer($future)"
-          }
+        future.onComplete {
+          case Success(Producable(producer)) ⇒ producer.getPublisher.subscribe(subscriber)
+          case Failure(error)                ⇒ subscriber.onError(error)
         }
     }
 }

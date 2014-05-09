@@ -32,11 +32,11 @@ object Producable {
   implicit def forProducer[T] = new Producable[Producer[T], T] {
     def apply(producer: Producer[T]) = producer
   }
-  implicit def forFuture[T](implicit executor: ExecutionContext) = new Producable[Future[T], T] {
-    def apply(future: Future[T]) = StreamProducer(future)
+  implicit def forFuture[P, T](implicit ev: Producable[P, T], ec: ExecutionContext) = new Producable[Future[P], T] {
+    def apply(future: Future[P]) = StreamProducer(future)
   }
-  implicit def forIterable[T] = new Producable[Iterable[T], T] {
-    def apply(iterable: Iterable[T]) = StreamProducer(iterable)
+  implicit def forIterable[P, T](implicit ev: P <:< Iterable[T]) = new Producable[P, T] {
+    def apply(iterable: P) = StreamProducer(ev(iterable))
   }
   implicit def forOption[T] = new Producable[Option[T], T] {
     def apply(option: Option[T]) = StreamProducer(option)

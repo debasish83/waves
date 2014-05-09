@@ -14,28 +14,28 @@
  * limitations under the License.
  */
 
-package waves.impl
+package waves
+package impl
 package ops
 
 import org.reactivestreams.api.Producer
 
 class Merge(_secondary: Producer[Any])(implicit _upstream: Upstream, _downstream: Downstream,
                                        _ctx: OperationProcessor.Context) extends StaticFanIn(_secondary) {
-  import OperationImpl.Placeholder
 
   def running(upstream2: Upstream) = new MergeRunningBehavior(upstream2)
 
   class MergeRunningBehavior(_upstream2: Upstream) extends RunningBehavior(_upstream2) {
-    var bufferedElement: Any = Placeholder
+    var bufferedElement: Any = NoValue
     var primaryCompleted = false
     var secondaryCompleted = false
 
     override def requestMore(elements: Int) = {
       requested += elements
       if (requested == elements) {
-        if (bufferedElement != Placeholder) {
+        if (NoValue != bufferedElement) {
           val next = bufferedElement
-          bufferedElement = Placeholder
+          bufferedElement = NoValue
           deliver(next)
           if (requested > 0) requestOneFromBothUpstreams()
         } else requestOneFromBothUpstreams()
@@ -44,15 +44,15 @@ class Merge(_secondary: Producer[Any])(implicit _upstream: Upstream, _downstream
 
     override def onNext(element: Any): Unit =
       if (requested > 0) {
-        deliver(primary(element))
+        deliver(element)
         if (requested > 0) upstream.requestMore(1)
-      } else bufferedElement = primary(element)
+      } else bufferedElement = element
 
     override def secondaryOnNext(element: Any): Unit =
       if (requested > 0) {
-        deliver(secondary(element))
+        deliver(element)
         if (requested > 0) upstream2.requestMore(1)
-      } else bufferedElement = secondary(element)
+      } else bufferedElement = element
 
     override def onComplete(): Unit =
       if (secondaryCompleted) downstream.onComplete()
@@ -62,9 +62,6 @@ class Merge(_secondary: Producer[Any])(implicit _upstream: Upstream, _downstream
       if (primaryCompleted) downstream.onComplete()
       else secondaryCompleted = true
 
-    def primary(element: Any): Any = element
-    def secondary(element: Any): Any = element
-
     def deliver(element: Any): Unit = {
       downstream.onNext(element)
       requested -= 1
@@ -72,11 +69,3 @@ class Merge(_secondary: Producer[Any])(implicit _upstream: Upstream, _downstream
   }
 }
 
-class MergeToEither(_secondary: Producer[Any])(implicit _upstream: Upstream, _downstream: Downstream,
-                                               _ctx: OperationProcessor.Context) extends Merge(_secondary) {
-
-  override def running(upstream2: Upstream) = new MergeRunningBehavior(upstream2) {
-    override def primary(element: Any) = Right(element)
-    override def secondary(element: Any) = Left(element)
-  }
-}

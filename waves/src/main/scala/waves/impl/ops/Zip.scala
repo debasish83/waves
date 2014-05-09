@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
-package waves.impl
+package waves
+package impl
 package ops
 
 import org.reactivestreams.api.Producer
 
 class Zip(_secondary: Producer[Any])(implicit _upstream: Upstream, _downstream: Downstream,
                                      _ctx: OperationProcessor.Context) extends StaticFanIn(_secondary) {
-  import OperationImpl.Placeholder
 
   def running(upstream2: Upstream) = new RunningBehavior(upstream2) {
-    var primaryElement: Any = Placeholder
-    var secondaryElement: Any = Placeholder
+    var primaryElement: Any = NoValue
+    var secondaryElement: Any = NoValue
 
     override def requestMore(elements: Int) = {
       requested += elements
@@ -33,21 +33,21 @@ class Zip(_secondary: Producer[Any])(implicit _upstream: Upstream, _downstream: 
     }
 
     override def onNext(element: Any): Unit =
-      if (secondaryElement != Placeholder) {
+      if (NoValue != secondaryElement) {
         val tuple = (element, secondaryElement)
-        secondaryElement = Placeholder
+        secondaryElement = NoValue
         deliver(tuple)
       } else primaryElement = element
 
     override def secondaryOnNext(element: Any): Unit =
-      if (primaryElement != Placeholder) {
+      if (NoValue != primaryElement) {
         val tuple = (primaryElement, element)
-        primaryElement = Placeholder
+        primaryElement = NoValue
         deliver(tuple)
       } else secondaryElement = element
 
     override def onComplete(): Unit =
-      if (primaryElement != Placeholder) {
+      if (NoValue != primaryElement) {
         become {
           new Behavior {
             override def secondaryOnNext(element: Any) = {
@@ -65,7 +65,7 @@ class Zip(_secondary: Producer[Any])(implicit _upstream: Upstream, _downstream: 
       }
 
     override def secondaryOnComplete(): Unit =
-      if (secondaryElement != Placeholder) {
+      if (NoValue != secondaryElement) {
         become {
           new Behavior {
             override def onNext(element: Any) = {

@@ -22,7 +22,7 @@ import scala.annotation.tailrec
 import Operation.Transformer
 
 class Transform(transformer: Transformer[Any, Any])(implicit val upstream: Upstream, val downstream: Downstream)
-    extends OperationImpl.Stateful {
+    extends OperationImpl.Stateful with (() ⇒ Unit) {
 
   var requested = 0
   val startBehavior = behavior
@@ -97,7 +97,8 @@ class Transform(transformer: Transformer[Any, Any])(implicit val upstream: Upstr
       } else become(new OutputPending(output, whenRemainingOutputIsDone))
     } else whenRemainingOutputIsDone()
 
-  def complete(): Unit = {
+  val complete: () ⇒ Unit = this
+  def apply(): Unit = {
     downstream.onComplete()
     transformer.cleanup()
   }

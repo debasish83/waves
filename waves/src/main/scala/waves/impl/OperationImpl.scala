@@ -22,7 +22,6 @@ import org.reactivestreams.api.Producer
 private[waves] trait OperationImpl extends Downstream with Upstream
 
 private[waves] object OperationImpl {
-  val Placeholder = new AnyRef
 
   trait SecondaryDownstream {
     def secondaryOnSubscribe(upstream2: Upstream): Unit = throw new IllegalStateException(s"Unexpected `subOnSubscribe($upstream2)` in $this")
@@ -107,7 +106,7 @@ private[waves] object OperationImpl {
                             ctx: OperationProcessor.Context): OperationImpl =
     op match {
       case Buffer(size)                ⇒ new ops.Buffer(size)
-      case Concat(next)                ⇒ new ops.Concat(next)
+      case Concat(next)                ⇒ new ops.Concat(next.asInstanceOf[() ⇒ Producer[Any]])
       case ConcatAll()                 ⇒ new ops.ConcatAll()
       case CustomBuffer(seed, f, g, h) ⇒ new ops.CustomBuffer(seed, f.asInstanceOf[(Any, Any) ⇒ Any], g, h)
       case Drop(n)                     ⇒ new ops.Drop(n)
@@ -115,7 +114,6 @@ private[waves] object OperationImpl {
       case Fold(seed, f)               ⇒ new ops.Fold(seed, f.asInstanceOf[(Any, Any) ⇒ Any])
       case Map(f)                      ⇒ new ops.Map(f.asInstanceOf[Any ⇒ Any])
       case Merge(secondary)            ⇒ new ops.Merge(secondary.asInstanceOf[Producer[Any]])
-      case MergeToEither(secondary)    ⇒ new ops.MergeToEither(secondary.asInstanceOf[Producer[Any]])
       case Multiply(factor)            ⇒ new ops.Multiply(factor)
       case OnEvent(callback)           ⇒ new ops.OnEvent(callback.asInstanceOf[Operation.StreamEvent[Any] ⇒ Unit])
       case Recover(f)                  ⇒ new ops.Recover(f)

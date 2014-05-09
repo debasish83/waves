@@ -60,10 +60,14 @@ abstract class OperationImplSpec extends Specification {
 
     private[OperationImplSpec] var verifiedForCleanExit = Seq.empty[Either[MockUpstream, MockDownstream]]
     private var requestSecondaryUpstreamCalls = Seq.empty[(Producer[_ <: Any], WithSecondaryDownstreamBehavior)]
-    private val chain = new OperationChain(operation, processorContext)
 
-    chain.connectUpstream(upstream)
-    chain.connectDownstream(downstream)
+    private val upstreamConnector = new UpstreamConnector
+    private val downstreamConnector = new DownstreamConnector
+
+    materialize(operation, upstreamConnector, downstreamConnector, processorContext)
+
+    upstreamConnector.connectUpstream(upstream)
+    downstreamConnector.connectDownstream(downstream)
 
     private def processorContext: OperationProcessor.Context =
       new OperationProcessor.Context {
@@ -96,12 +100,12 @@ abstract class OperationImplSpec extends Specification {
       if (requestSecondaryUpstreamCalls.nonEmpty)
         fail("Unexpected calls: " + callsToString("requestSecondaryUpstream", requestSecondaryUpstreamCalls.map(_._1)))
 
-    def requestMore(counts: Int*): Unit = counts.foreach(chain.rightUpstream.requestMore)
-    def cancel(): Unit = chain.rightUpstream.cancel()
+    def requestMore(counts: Int*): Unit = counts.foreach(downstreamConnector.requestMore)
+    def cancel(): Unit = downstreamConnector.cancel()
 
-    def onNext(elements: Any*): Unit = elements.foreach(chain.leftDownstream.onNext)
-    def onComplete(): Unit = chain.leftDownstream.onComplete()
-    def onError(cause: Throwable): Unit = chain.leftDownstream.onError(cause)
+    def onNext(elements: Any*): Unit = elements.foreach(upstreamConnector.onNext)
+    def onComplete(): Unit = upstreamConnector.onComplete()
+    def onError(cause: Throwable): Unit = upstreamConnector.onError(cause)
   }
 
   class SubDownstreamInterface(impl: WithSecondaryDownstreamBehavior) extends MockUpstream {

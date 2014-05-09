@@ -32,19 +32,17 @@ object Flow {
   val Empty: Flow[Nothing] = apply(StreamProducer.empty[Nothing])
 
   def apply[T](producer: Producer[T]): Flow[T] = Unmapped(producer)
-  def apply[T](future: Future[T])(implicit ec: ExecutionContext): Flow[T] = Unmapped(StreamProducer(future))
+  def apply[P, T](future: Future[P])(implicit ev: Producable[P, T], ec: ExecutionContext): Flow[T] = Unmapped(StreamProducer(future))
   def apply[T](iterable: Iterable[T])(implicit ec: ExecutionContext): Flow[T] = Unmapped(StreamProducer(iterable))
   def apply[T](iterator: Iterator[T])(implicit ec: ExecutionContext): Flow[T] = Unmapped(StreamProducer(iterator))
   def of[T](elements: T*)(implicit ec: ExecutionContext): Flow[T] = apply(elements)
 
-  implicit def fromProducer[T](producer: Producer[T])(implicit ec: ExecutionContext): Flow[T] = apply(producer)
-  implicit def fromFuture[T](future: Future[T])(implicit ec: ExecutionContext): Flow[T] = apply(future)
-  implicit def fromIterable[T](iterable: Iterable[T])(implicit ec: ExecutionContext): Flow[T] = apply(iterable)
+  def single[T](future: Future[T])(implicit ec: ExecutionContext): Flow[T] = Unmapped(StreamProducer(future.map(_ :: Nil)))
 
-  implicit class Api[A](val flow: Flow[A]) extends OperationApi[A] {
-    type Res[B] = Flow[B]
-
+  implicit class Api[A](val flow: Flow[A]) extends OperationApi[A, Flow] {
     def append[B](next: A ==> B): Flow[B] = flow ~> next
+
+    def res2Api[T](flow: Flow[T]) = Api(flow)
 
     def toProducer(implicit ec: ExecutionContext): Producer[A] =
       flow match {

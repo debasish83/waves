@@ -20,9 +20,8 @@ package ops
 import scala.util.control.NonFatal
 import org.reactivestreams.api.Producer
 
-class Concat(next: () ⇒ Producer[Any])(implicit val upstream: Upstream, val downstream: Downstream,
-                                       ctx: OperationProcessor.Context)
-    extends OperationImpl.StatefulWithSecondaryUpstream {
+class Concat(next: () ⇒ Producer[Any])(implicit us: Upstream, ds: Downstream, ctx: OperationProcessor.Context)
+    extends StatefulWithUpstream2Draining {
 
   def initialBehavior: Behavior =
     new Behavior {
@@ -36,38 +35,11 @@ class Concat(next: () ⇒ Producer[Any])(implicit val upstream: Upstream, val do
         downstream.onNext(element)
       }
       override def onComplete(): Unit = {
-        become(new WaitingForSecondFlowSubscription(requested))
+        become(new DrainingSecondaryUpstream(requested))
         try requestSecondaryUpstream(next())
         catch {
           case NonFatal(e) ⇒ downstream.onError(e)
         }
       }
-    }
-
-  class WaitingForSecondFlowSubscription(var requested: Int) extends Behavior {
-    override def requestMore(elements: Int) = requested += elements
-    override def cancel() = become {
-      new Behavior {
-        override def secondaryOnSubscribe(upstream2: Upstream) = upstream2.cancel()
-        override def secondaryOnComplete() = ()
-        override def secondaryOnError(cause: Throwable) = ()
-      }
-    }
-    override def secondaryOnSubscribe(upstream2: Upstream) = {
-      become(draining(upstream2))
-      upstream2.requestMore(requested)
-    }
-    override def secondaryOnComplete() = downstream.onComplete()
-    override def secondaryOnError(cause: Throwable) = downstream.onError(cause)
-  }
-
-  // when we enter this state we have already requested all so far requested elements from upstream2
-  def draining(upstream2: Upstream): Behavior =
-    new Behavior {
-      override def requestMore(elements: Int) = upstream2.requestMore(elements)
-      override def cancel() = upstream2.cancel()
-      override def secondaryOnNext(element: Any) = downstream.onNext(element)
-      override def secondaryOnComplete() = downstream.onComplete()
-      override def secondaryOnError(cause: Throwable) = downstream.onError(cause)
     }
 }

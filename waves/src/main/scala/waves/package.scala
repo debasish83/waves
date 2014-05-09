@@ -19,4 +19,6 @@ package object waves {
 
   // shorten entry point into operations DSL
   def operation[T]: Operation.Identity[T] = Operation.Identity()
+
+  private[waves] val NoValue = new AnyRef
 }

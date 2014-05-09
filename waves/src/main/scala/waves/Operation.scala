@@ -17,6 +17,7 @@
 package waves
 
 import scala.language.{ higherKinds, implicitConversions }
+import scala.annotation.unchecked.uncheckedVariance
 import scala.concurrent.ExecutionContext
 import org.reactivestreams.api.{ Producer, Consumer, Processor }
 import waves.impl.OperationProcessor
@@ -26,7 +27,9 @@ sealed trait OperationX // untyped base trait used for dealing with untyped oper
 sealed abstract class Operation[-A, +B] extends OperationX {
   import Operation._
 
-  def ~>[C](other: B ==> C): A ==> C =
+  type Res[C] = Operation[A @uncheckedVariance, C]
+
+  def ~>[C](other: B ==> C): Res[C] =
     (this, other) match {
       case (_: Identity[_], _) ⇒ other.asInstanceOf[A ==> C]
       case (_, _: Identity[_]) ⇒ this.asInstanceOf[A ==> C]
@@ -38,10 +41,10 @@ object Operation {
 
   def apply[A]: Identity[A] = Identity[A]()
 
-  implicit class Api[A, B](val op: A ==> B) extends OperationApi[B] {
-    type Res[C] = A ==> C
+  implicit class Api[A, B](val op: A ==> B) extends OperationApi[B, Operation[A, B]#Res] {
+    def append[C](next: B ==> C): Operation[A, B]#Res[C] = op ~> next
 
-    def append[C](next: B ==> C): Res[C] = op ~> next
+    def res2Api[T](op: Operation[A, B]#Res[T]) = Api(op)
 
     def toProcessor(implicit ec: ExecutionContext): Processor[A, B] =
       new OperationProcessor(op) // TODO: introduce implicit settings allowing for buffer size config
@@ -61,7 +64,7 @@ object Operation {
   final case class ~>[A, B, C](f: A ==> B, g: B ==> C) extends (A ==> C)
 
   final case class Buffer[T](size: Int) extends (T ==> T) {
-    require(size > 0, "size must be > 0")
+    require(Integer.lowestOneBit(size) == size && size >= 2, "size must be a power of 2 and >= 2")
   }
 
   final case class CustomBuffer[A, B, S](seed: S,
@@ -69,7 +72,7 @@ object Operation {
                                          expand: S ⇒ (S, Option[B]),
                                          canConsume: S ⇒ Boolean) extends (A ==> B)
 
-  final case class Concat[T](next: () ⇒ Producer[T]) extends (T ==> T)
+  final case class Concat[A, AA >: A](next: () ⇒ Producer[_ <: AA]) extends (A ==> AA)
 
   final case class ConcatAll[A, B](implicit ev: Producable[A, B]) extends (A ==> B)
 
@@ -91,9 +94,7 @@ object Operation {
 
   final case class Map[A, B](f: A ⇒ B) extends (A ==> B)
 
-  final case class Merge[A, B >: A](secondary: Producer[_ <: B]) extends (A ==> B)
-
-  final case class MergeToEither[L, R](left: Producer[L]) extends (R ==> Either[L, R])
+  final case class Merge[A, AA >: A](secondary: Producer[_ <: AA]) extends (A ==> AA)
 
   final case class Multiply[T](factor: Int) extends (T ==> T)
 
@@ -109,7 +110,7 @@ object Operation {
 
   final case class OuterMap[A, B](f: Producer[A] ⇒ Producer[B]) extends (A ==> B)
 
-  final case class Recover[A, B <: A](pf: PartialFunction[Throwable, Producer[B]]) extends (A ==> B)
+  final case class Recover[A, AA >: A](pf: PartialFunction[Throwable, Producer[AA]]) extends (A ==> AA)
 
   final case class Split[T](f: T ⇒ Split.Command) extends (T ==> Producer[T])
   object Split {
@@ -120,7 +121,9 @@ object Operation {
     case object First extends Command // complete the current sub-stream (if there is one) and start a new one with the current element
   }
 
-  final case class Take[T](n: Int) extends (T ==> T)
+  final case class Take[T](n: Int) extends (T ==> T) {
+    require(n > 0)
+  }
 
   final case class Tee[T](secondary: Producer[T] ⇒ Unit) extends (T ==> T)
 

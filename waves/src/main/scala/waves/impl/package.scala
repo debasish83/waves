@@ -17,6 +17,7 @@
 package waves
 
 import org.reactivestreams.spi.Subscription
+import Operation.~>
 
 package object impl {
   private[waves]type ==>[-I, +O] = Operation[I, O]
@@ -25,13 +26,22 @@ package object impl {
   def operation[T]: Operation.Identity[T] = Operation.Identity()
 
   type Upstream = Subscription // the interface is identical, should we nevertheless use a separate type?
-}
 
-package impl {
-  // same as `Subscriber[T]`, but untyped and without `onSubscribe` and the "must be async" semantics
-  trait Downstream {
-    def onNext(element: Any): Unit
-    def onComplete(): Unit
-    def onError(cause: Throwable): Unit
-  }
+  /**
+   * Converts the model Operation into a double-linked chain of OperationImpls
+   * whereby the individual OperationImpl instances are separated by StreamConnectors.
+   */
+  private[impl] def materialize(op: OperationX,
+                                upstream: StreamConnector, downstream: StreamConnector,
+                                ctx: OperationProcessor.Context): Unit =
+    op match {
+      case head ~> tail ⇒
+        val connector = new StreamConnector
+        materialize(head, upstream, connector, ctx)
+        materialize(tail, connector, downstream, ctx)
+      case _ ⇒
+        val opImpl = OperationImpl(op)(upstream, downstream, ctx)
+        upstream.connectDownstream(opImpl)
+        downstream.connectUpstream(opImpl)
+    }
 }
