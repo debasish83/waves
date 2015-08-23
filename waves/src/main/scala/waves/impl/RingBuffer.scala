@@ -85,9 +85,9 @@ class RingBuffer[T: ClassTag](val size: Int) {
    * Copies selected values from the RingBuffer to an array through at most 2
    * native System.arraycopy for efficiency. Fills the given array `xs` starting
    * at elements of RingBuffer from index `start` with at most `len` values
-   * from the RingBuffer storage. Copying will stop once either the end of the
-   * if the index `start` and number of elements specified by `len` does not exist
-   * in RingBuffer internal storage.
+   * from the RingBuffer storage. Copying will stop if the index `start` is not
+   * within RingBuffer elements and number of elements specified by `len` does not
+   * exist in RingBuffer internal storage.
    *
    *  @param  xs     the array to fill.
    *  @param  start  the starting index from RingBuffer
