@@ -26,7 +26,6 @@ import waves.Operation.Split
 import waves.{ StreamProducer, Flow }
 
 class ExamplesSpec extends Specification with NoTimeConversions {
-  import scala.concurrent.ExecutionContext.Implicits.global
 
   "The OperationImpl infrastructure must properly execute" >> {
 

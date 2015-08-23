@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Mathias Doenitz
+ * Copyright (C) 2015 Mathias Doenitz, Debasish Das
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,9 @@ class RingBuffer[T: ClassTag](val size: Int) {
    * The number of elements currently in the buffer.
    */
   def count: Int = writeIx - readIx
+
   def isEmpty: Boolean = count == 0
+
   def nonEmpty: Boolean = count > 0
 
   /**
@@ -78,4 +80,33 @@ class RingBuffer[T: ClassTag](val size: Int) {
   def drop(): Unit =
     if (count > 0) readIx += 1
     else throw new NoSuchElementException
+
+  /**
+   * Copies selected values from the RingBuffer to an array through at most 2
+   * native System.arraycopy for efficiency. Fills the given array `xs` starting
+   * at elements of RingBuffer from index `start` with at most `len` values
+   * from the RingBuffer storage. Copying will stop once either the end of the
+   * if the index `start` and number of elements specified by `len` does not exist
+   * in RingBuffer internal storage.
+   *
+   *  @param  xs     the array to fill.
+   *  @param  start  the starting index from RingBuffer
+   *  @param  len    the number of elements to copy.
+   *
+   */
+  def copyToArray(xs: Array[T], start: Int, len: Int): Unit = {
+    require(xs.length == len, s"insufficient size $len to copy")
+    require(start >= 0 && start < count, s"start index $start out of bounds $count")
+    require(start + len <= count, s"copy elements $len more than buffer elements $count")
+
+    val startIndex = (readIx + start) & mask
+    //TO DO: Can we clean Math.min and if (startIndex) ?
+    val forwardLength = Math.min(size - startIndex, len)
+    System.arraycopy(array, startIndex, xs, 0, forwardLength)
+    if (startIndex > 0) {
+      val wrapLength = len - forwardLength
+      System.arraycopy(array, 0, xs, forwardLength, wrapLength)
+    }
+  }
 }
+
